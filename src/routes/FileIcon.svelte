@@ -1,4 +1,4 @@
-<!-- FileIcon.svelte - Fixed Version -->
+<!-- FileIcon.svelte - Fixed Version
 <script lang="ts">
   import {
     // Folders
@@ -233,4 +233,146 @@
   class="flex-shrink-0 transition-colors duration-200 {getIconColor(
     fileType
   )} {className}"
-/>
+/> -->
+
+<script lang="ts">
+  import raw from "$lib/icon-manifest.json";
+
+  interface FileProps {
+    file: {
+      name: string;
+      is_dir: boolean;
+      is_file: boolean;
+      size?: number | null;
+    };
+    size?: number;
+    isOpen?: boolean;
+  }
+
+  interface IconDefinition {
+    iconPath?: string;
+    fontCharacter?: string;
+    fontColor?: string;
+    fontSize?: string;
+    fontId?: string;
+  }
+
+  interface IconManifestMap {
+    iconDefinitions?: Record<string, IconDefinition>;
+
+    // associations
+    fileExtensions?: Record<string, string>;
+    fileNames?: Record<string, string>;
+    folderNames?: Record<string, string>;
+    folderNamesExpanded?: Record<string, string>;
+    languageIds?: Record<string, string>;
+
+    // defaults
+    file?: string;
+    folder?: string;
+    folderExpanded?: string;
+
+    // optional theme overrides
+    light?: Omit<IconManifestMap, "iconDefinitions" | "light" | "highContrast">;
+    highContrast?: Omit<
+      IconManifestMap,
+      "iconDefinitions" | "light" | "highContrast"
+    >;
+  }
+
+  const iconManifest = raw as IconManifestMap;
+
+  let { file, size = 20, isOpen = false }: FileProps = $props();
+
+  let extension = $derived.by(() => {
+    if (file.is_dir) return null;
+    const parts = file.name.split(".");
+    return parts.length > 1 ? parts.pop()?.toLowerCase() : null;
+  });
+
+  // Get icon definition ID, then resolve to actual icon filename
+  let iconName = $derived.by(() => {
+    let iconDefId = "";
+
+    if (file.is_dir) {
+      const folderName = file.name.toLowerCase();
+
+      if (isOpen) {
+        iconDefId =
+          iconManifest.folderNamesExpanded?.[folderName] ||
+          iconManifest.folderExpanded ||
+          "folder-open";
+      } else {
+        iconDefId =
+          iconManifest.folderNames?.[folderName] ||
+          iconManifest.folder ||
+          "folder";
+      }
+    } else {
+      // Files
+      const fileName = file.name.toLowerCase();
+
+      // Try exact filename first
+      if (iconManifest.fileNames?.[fileName]) {
+        iconDefId = iconManifest.fileNames[fileName];
+      }
+      // Try extension
+      else if (extension && iconManifest.fileExtensions?.[extension]) {
+        iconDefId = iconManifest.fileExtensions[extension];
+      }
+      // Default
+      else {
+        iconDefId = iconManifest.file || "file";
+      }
+    }
+
+    // Now resolve the icon definition to get the actual filename
+    const iconDef = iconManifest.iconDefinitions?.[iconDefId];
+    if (iconDef?.iconPath) {
+      // Extract filename from path: "./../icons/javascript.svg" → "javascript.svg"
+      const filename = iconDef.iconPath.split("/").pop();
+      return filename?.replace(".svg", "") || "file";
+    }
+
+    // Fallback to the definition ID itself
+    return iconDefId || "file";
+  });
+
+  let hasError = $state(false);
+</script>
+
+{#if !hasError}
+  <img
+    src="/icons/{iconName}.svg"
+    alt="{file.name} icon"
+    width={size}
+    height={size}
+    class="material-icon"
+    onerror={() => (hasError = true)}
+  />
+{:else}
+  <div
+    class="fallback-icon"
+    style="width: {size}px; height: {size}px; font-size: {Math.round(
+      size * 0.7
+    )}px;"
+  >
+    {file.is_dir ? "📁" : "📄"}
+  </div>
+{/if}
+
+<style>
+  .material-icon {
+    flex-shrink: 0;
+    object-fit: contain;
+    transition: transform 0.1s ease;
+  }
+
+  .fallback-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+  }
+</style>

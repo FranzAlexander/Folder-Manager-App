@@ -10,6 +10,7 @@
     is_dir: boolean;
     is_file: boolean;
     size: number | null;
+    path: string;
   }
 
   let rootDir = $state<string | null>(null);
@@ -27,6 +28,7 @@
     currentDir = rootDir || "";
 
     entries = await invoke("read_directory", { path: rootDir });
+    console.log(entries);
   });
 
   async function selectDirectory() {
@@ -48,9 +50,8 @@
     }
   }
 
-  async function navigateToDirectory(name: string) {
-    currentDir = rootDir + name;
-
+  async function navigateToDirectory(path: string) {
+    currentDir = path;
     entries = await invoke("read_directory", { path: currentDir });
   }
 
@@ -67,7 +68,7 @@
       <button><ArrowBigLeft class="size-4" /> </button>
       <button><ArrowBigRight class="size-4" /></button>
     </div>
-    <h3 class="ml-4">{currentDir}</h3>
+    <input bind:value={currentDir} />
     <button disabled={!selectedEntry}>Tags</button>
     <button disabled={!selectedEntry}>Filter</button>
   </div>
@@ -82,7 +83,7 @@
           {#if entry.is_dir}
             <button
               onclick={() => selectEntry(entry)}
-              ondblclick={() => navigateToDirectory(entry.name)}
+              ondblclick={() => navigateToDirectory(entry.path)}
               >{entry.name}</button
             >
           {:else}

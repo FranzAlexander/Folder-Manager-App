@@ -14,6 +14,7 @@ pub struct DirectoryEntry {
     is_dir: bool,
     is_file: bool,
     size: Option<u64>,
+    path: String,
 }
 
 #[tauri::command]
@@ -69,6 +70,7 @@ pub async fn read_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
             let entry = entry.ok()?;
             let metadata = entry.metadata().ok()?;
             let name = entry.file_name().into_string().ok()?;
+            let path = entry.path().into_os_string().into_string().ok()?;
 
             Some(DirectoryEntry {
                 name,
@@ -79,6 +81,7 @@ pub async fn read_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
                 } else {
                     None
                 },
+                path,
             })
         })
         .collect();
