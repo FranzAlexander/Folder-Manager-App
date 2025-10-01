@@ -13,6 +13,9 @@ const config = {
       fallback: "index.html",
     }),
   },
+  compilerOptions: {
+    runes: true,
+  },
 };
 
 export default config;

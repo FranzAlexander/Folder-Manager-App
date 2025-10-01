@@ -237,14 +237,10 @@
 
 <script lang="ts">
   import raw from "$lib/icon-manifest.json";
+  import type { DirectoryEntry } from "$lib/types";
 
   interface FileProps {
-    file: {
-      name: string;
-      is_dir: boolean;
-      is_file: boolean;
-      size?: number | null;
-    };
+    file: DirectoryEntry;
     size?: number;
     isOpen?: boolean;
   }
@@ -285,7 +281,7 @@
   let { file, size = 20, isOpen = false }: FileProps = $props();
 
   let extension = $derived.by(() => {
-    if (file.is_dir) return null;
+    if (file.isDir) return null;
     const parts = file.name.split(".");
     return parts.length > 1 ? parts.pop()?.toLowerCase() : null;
   });
@@ -294,7 +290,7 @@
   let iconName = $derived.by(() => {
     let iconDefId = "";
 
-    if (file.is_dir) {
+    if (file.isDir) {
       const folderName = file.name.toLowerCase();
 
       if (isOpen) {
@@ -357,7 +353,7 @@
       size * 0.7
     )}px;"
   >
-    {file.is_dir ? "📁" : "📄"}
+    {file.isDir ? "📁" : "📄"}
   </div>
 {/if}
 
