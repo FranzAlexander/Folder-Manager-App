@@ -13,30 +13,10 @@
     items: Tag[];
     name: string;
     oncreate: (search: string) => Promise<void>;
-    action: (id: number) => void;
+    action: (id: number) => Promise<void>;
     disabled?: boolean;
   } = $props();
 
-  //   type Item = {
-  //     content: string;
-  //     keywords: string[];
-  //     disabled?: boolean;
-  //     action?: () => void;
-  //   };
-
-  //   type Group = {
-  //     name: string;
-  //     items: items;
-  //   };
-
-  //   type View = {
-  //     columns: number | undefined;
-  //     empty: string;
-  //     placeholder: string;
-  //     groups: Group[];
-  //   };
-
-  //   const view: View;
   let search = $state("");
 
   async function handleKeydown(event: KeyboardEvent) {
@@ -45,6 +25,10 @@
       await oncreate(search);
       search = "";
     }
+  }
+
+  async function onaction(itemId: number) {
+    await action(itemId);
   }
 </script>
 
@@ -75,7 +59,7 @@
               <Command.GroupHeading>Current {name}</Command.GroupHeading>
               <Command.GroupItems class="grid grid-cols-6 gap-2">
                 {#each items as item (item)}
-                  <Command.Item {disabled} onSelect={() => action(item.id)}>
+                  <Command.Item {disabled} onSelect={() => onaction(item.id)}>
                     <div
                       class="bg-muted text-primary border-border rounded-md border px-2 py-0.5 text-sm font-medium items-center inline-flex w-fit shrink-0 justify-center"
                     >

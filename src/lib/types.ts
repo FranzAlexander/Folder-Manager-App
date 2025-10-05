@@ -1,15 +1,21 @@
-export interface DirectoryEntry {
+export interface FileSystemEntry {
   name: string;
   isDir: boolean;
   isFile: boolean;
   size: number | null;
   path: string;
   dateModified: string;
-  type: string;
+  fileType: string;
   tagIds: number[];
+  statusIds: number[];
 }
 
 export interface Tag {
+  id: number;
+  name: string;
+}
+
+export interface Status {
   id: number;
   name: string;
 }

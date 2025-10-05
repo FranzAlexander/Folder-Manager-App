@@ -1,28 +1,13 @@
-use std::{collections::HashSet, fs};
+use std::{collections::HashSet, fs, sync::Mutex};
 
 use chrono::{DateTime, Local};
-use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
-use crate::database::{insert_files, select_file_tags, select_files};
-
-#[derive(Serialize, Deserialize, Default)]
-struct AppConfig {
-    root_directory: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Default, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct DirectoryEntry {
-    pub name: String,
-    pub is_dir: bool,
-    pub is_file: bool,
-    pub size: Option<u64>,
-    pub path: String,
-    pub date_modified: String,
-    pub file_type: String,
-    pub tag_ids: Vec<i64>,
-}
+use crate::{
+    db::file_repository::{insert_files, select_file_status, select_file_tags, select_files},
+    error::AppResult,
+    model::{AppConfig, AppState, FileSystemEntry},
+};
 
 #[tauri::command]
 pub async fn get_root_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -70,8 +55,14 @@ pub async fn set_root_directory(app: tauri::AppHandle, path: String) -> Result<(
 }
 
 #[tauri::command]
-pub fn read_directory(app: tauri::AppHandle, path: String) -> Result<Vec<DirectoryEntry>, String> {
-    let mut entries: Vec<DirectoryEntry> = fs::read_dir(&path)
+pub fn read_directory(
+    state: tauri::State<Mutex<AppState>>,
+    path: String,
+) -> Result<Vec<FileSystemEntry>, String> {
+    let app_state = state.lock().unwrap();
+    let conn = &app_state.conn;
+
+    let mut entries: Vec<FileSystemEntry> = fs::read_dir(&path)
         .map_err(|e| format!("Failed to read directory '{}': {}", path, e))?
         .filter_map(|entry| {
             let entry = entry.ok()?;
@@ -84,7 +75,7 @@ pub fn read_directory(app: tauri::AppHandle, path: String) -> Result<Vec<Directo
 
             let date_modified: DateTime<Local> = metadata.modified().ok()?.into();
             let file_type = if metadata.is_dir() {
-                String::from("Folder")
+                String::from("DIR")
             } else {
                 entry
                     .path()
@@ -94,7 +85,7 @@ pub fn read_directory(app: tauri::AppHandle, path: String) -> Result<Vec<Directo
                     .unwrap_or_else(|| String::from("File"))
             };
 
-            Some(DirectoryEntry {
+            Some(FileSystemEntry {
                 name,
                 is_dir: metadata.is_dir(),
                 is_file: metadata.is_file(),
@@ -107,29 +98,68 @@ pub fn read_directory(app: tauri::AppHandle, path: String) -> Result<Vec<Directo
                 date_modified: date_modified.to_rfc3339(),
                 file_type,
                 tag_ids: Vec::new(),
+                status_ids: Vec::new(),
             })
         })
         .collect();
 
-    let files_in_db = select_files(&app, entries.iter().map(|e| e.path.as_str()).collect())?;
+    let files_in_db = select_files(conn, entries.iter().map(|e| e.path.as_str()).collect())?;
 
     let db_paths: HashSet<String> = files_in_db.iter().map(|f| f.path.clone()).collect();
 
-    let files_to_insert: Vec<&DirectoryEntry> = entries
+    let files_to_insert: Vec<&FileSystemEntry> = entries
         .iter()
         .filter(|entry| !db_paths.contains(&entry.path))
         .collect();
 
     if !files_to_insert.is_empty() {
-        insert_files(&app, files_to_insert)?;
+        insert_files(conn, files_to_insert)?;
     }
 
-    let path_to_tags = select_file_tags(&app, entries.iter().map(|e| e.path.as_str()).collect())?;
+    let path_to_tags = select_file_tags(conn, entries.iter().map(|e| e.path.as_str()).collect())?;
+
+    let path_to_status =
+        select_file_status(conn, entries.iter().map(|e| e.path.as_str()).collect())?;
 
     for entry in &mut entries {
         if let Some(tag_ids) = path_to_tags.get(&entry.path) {
             entry.tag_ids = tag_ids.clone();
         }
+        if let Some(status_ids) = path_to_status.get(&entry.path) {
+            entry.status_ids = status_ids.clone();
+        }
     }
     Ok(entries)
+}
+
+#[tauri::command]
+pub fn start_executable(app: tauri::AppHandle, path: String) -> AppResult<()> {
+    use tauri_plugin_shell::ShellExt;
+
+    let result = app.shell().command(&path).spawn();
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(tauri_plugin_shell::Error::Io(io_err)) if io_err.raw_os_error() == Some(740) => {
+            #[cfg(target_os = "windows")]
+            {
+                app.shell()
+                    .command("powershell")
+                    .args([
+                        "-Command",
+                        &format!("Start-Process -FilePath '{}' -Verb RunAs", path),
+                    ])
+                    .spawn()
+                    .map_err(|_| {
+                        use crate::error::AppError;
+
+                        AppError::permission_denied(
+                            "Failed to launch with elevation. User may have denied UAC prompt.",
+                        )
+                    })
+                    .map(|_| ())
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
 }
