@@ -1,4 +1,4 @@
-import type { FileSystemEntry } from "$lib/types";
+import type { ColumnKey, FileSystemEntry } from "$lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -9,6 +9,8 @@ export class FileExplorerState {
   historyIndex = $state<number>(0);
   selectedEntry = $state<FileSystemEntry | null>(null);
   entries = $state<FileSystemEntry[]>([]);
+  sortedColumn = $state<ColumnKey>("name");
+  sortedDirection = $state<"asc" | "desc">("desc");
 
   get currentDir() {
     return this.history[this.historyIndex] || "";
@@ -91,5 +93,31 @@ export class FileExplorerState {
 
   startExecutable = async (path: string) => {
     await invoke("start_executable", { path });
+  };
+
+  sortColumns = (columnKey: ColumnKey) => {
+    if (this.sortedColumn === columnKey) {
+      this.sortedDirection = this.sortedDirection === "asc" ? "desc" : "asc";
+    } else {
+      this.sortedColumn = columnKey;
+      this.sortedDirection = "asc";
+    }
+
+    const direction = this.sortedDirection === "asc" ? 1 : -1;
+
+    this.entries.sort((a, b) => {
+      const aValue = a[columnKey as keyof FileSystemEntry];
+      const bValue = b[columnKey as keyof FileSystemEntry];
+
+      if (typeof aValue === "string" && typeof bValue === "string") {
+        return aValue.localeCompare(bValue) * direction;
+      }
+
+      if (typeof aValue === "number" && typeof bValue === "number") {
+        return (aValue - bValue) * direction;
+      }
+
+      return 0;
+    });
   };
 }

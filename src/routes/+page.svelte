@@ -78,47 +78,55 @@
 
 <svelte:window onmouseup={fileExplorer.handleMouseButton} />
 
-<main class="bg-background w-full h-screen m-0 text-primary flex flex-col">
-  <div class="border-b border-border px-4 py-2 flex items-center gap-3">
-    <div class="flex items-center gap-1">
-      <Button.Root
-        disabled={fileExplorer.historyIndex === 0}
-        class="p-1.5 rounded-md hover:bg-muted hover:cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
-        onclick={fileExplorer.goBack}
-        title="Back"
-      >
-        <ArrowBigLeft />
-      </Button.Root>
-      <Button.Root
-        disabled={fileExplorer.historyIndex >= fileExplorer.history.length - 1}
-        class="p-1.5 rounded-md hover:bg-muted hover:cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
-        onclick={fileExplorer.goForward}
-        title="Forward"
-      >
-        <ArrowBigRight />
-      </Button.Root>
+<main class="bg-background text-primary m-0 flex h-screen w-full flex-col">
+  <div class="border-border border-b px-4 py-2 backdrop-blur-sm">
+    <div class=" flex items-center gap-6">
+      <div class="flex items-center gap-0.5">
+        <Button.Root
+          disabled={fileExplorer.historyIndex === 0}
+          class="hover:bg-muted group rounded-md p-1.5 transition-colors hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          onclick={fileExplorer.goBack}
+          title="Back"
+        >
+          <ArrowBigLeft class="size-4" />
+        </Button.Root>
+        <Button.Root
+          disabled={fileExplorer.historyIndex >=
+            fileExplorer.history.length - 1}
+          class="hover:bg-muted group rounded-md p-1.5 transition-colors hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          onclick={fileExplorer.goForward}
+          title="Forward"
+        >
+          <ArrowBigRight class="size-4" />
+        </Button.Root>
+      </div>
+
+      <div class="flex flex-1 items-center rounded-lg">
+        <input
+          bind:value={fileExplorer.currentDir}
+          class="text-primary/80 bg-foreground flex-1 rounded-md p-1 text-sm outline-none"
+        />
+      </div>
+
+      <div class="flex items-center gap-3">
+        <ItemSelector
+          items={tags}
+          name={"Tags"}
+          oncreate={createTag}
+          action={assignTag}
+          disabled={!fileExplorer.selectedEntry}
+        />
+
+        <ItemSelector
+          items={statusList}
+          name={"Status"}
+          oncreate={createStatus}
+          action={assignStatus}
+          disabled={!fileExplorer.selectedEntry}
+        />
+      </div>
     </div>
-    <div class="h-4 w-px bg-border/40 mx-1"></div>
-
-    <input bind:value={fileExplorer.currentDir} />
-
-    <ItemSelector
-      items={tags}
-      name={"Tags"}
-      oncreate={createTag}
-      action={assignTag}
-      disabled={!fileExplorer.selectedEntry}
-    />
-
-    <ItemSelector
-      items={statusList}
-      name={"Status"}
-      oncreate={createStatus}
-      action={assignStatus}
-      disabled={!fileExplorer.selectedEntry}
-    />
   </div>
-
   {#if fileExplorer.rootDir && !fileExplorer.showSetup}
     <FileTable {fileExplorer} {tags} {statusList} />
   {:else}

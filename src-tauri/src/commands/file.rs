@@ -26,7 +26,7 @@ pub async fn get_root_directory(app: tauri::AppHandle) -> Result<Option<String>,
     let config: AppConfig =
         serde_json::from_str(&contents).map_err(|e| format!("Failed to parse config: {}", e))?;
 
-    Ok(config.root_directory) // Return the Option directly
+    Ok(config.root_directory)
 }
 
 #[tauri::command]

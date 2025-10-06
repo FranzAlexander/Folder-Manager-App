@@ -18,6 +18,7 @@
   --color-primary: var(--primary);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-popover: var(--popover);
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);

@@ -19,3 +19,11 @@ export interface Status {
   id: number;
   name: string;
 }
+
+export type ColumnKey =
+  | "name"
+  | "dateModified"
+  | "fileType"
+  | "size"
+  | "tags"
+  | "status";

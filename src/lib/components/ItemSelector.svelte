@@ -34,34 +34,43 @@
 
 <Popover.Root>
   <Popover.Trigger
-    class="border-border border py-2 px-4 rounded-lg hover:bg-accent inline-flex hover:cursor-pointer"
+    class="border-border hover:bg-accent rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:cursor-pointer"
   >
     {name}
   </Popover.Trigger>
   <Popover.Portal>
-    <Popover.Content class="z-50 w-90" sideOffset={4}>
+    <Popover.Content class="z-50 w-90" sideOffset={6}>
       <Command.Root
-        columns={6}
-        class="flex h-full w-full border-border border bg-foreground  rounded-lg flex-col text-primary"
+        class="border-border bg-popover text-primary overflow-hidden rounded-lg border shadow-xl"
       >
-        <div class="flex items-center gap-2 border-b border-border pl-3 pr-8">
-          <Search class="size-6" />
+        <div
+          class="border-border flex items-center gap-2.5 border-b px-3 py-2.5"
+        >
+          <Search class="text-muted-foreground size-4 shrink-0" />
           <Command.Input
             bind:value={search}
             onkeydown={handleKeydown}
-            class="outline-hidden inline-flex h-10 w-full rounded-md py-3 bg-transparent text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            placeholder="Search or create..."
+            class="placeholder:text-muted-foreground rounded-md bg-transparent py-3 text-sm outline-none  disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
-        <Command.List>
-          <Command.Viewport>
-            <Command.Empty>Press Enter to create new {name}.</Command.Empty>
+
+        <Command.List class="overflow-y-auto">
+          <Command.Viewport class="p-2">
+            <Command.Empty
+              class="text-muted-foreground py-10 text-center text-sm"
+            >
+              No {name.toLowerCase()} found. Press Enter to create.
+            </Command.Empty>
+
             <Command.Group>
               <Command.GroupHeading>Current {name}</Command.GroupHeading>
-              <Command.GroupItems class="grid grid-cols-6 gap-2">
+              <Command.GroupItems class="flex flex-wrap gap-1.5">
                 {#each items as item (item)}
                   <Command.Item {disabled} onSelect={() => onaction(item.id)}>
                     <div
-                      class="bg-muted text-primary border-border rounded-md border px-2 py-0.5 text-sm font-medium items-center inline-flex w-fit shrink-0 justify-center"
+                      class="bg-muted border-border text-primary hover:bg-accent hover:text-accent-foreground hover:border-accent/80 cursor-pointer rounded-md border px-3 py-1.5 text-center text-sm font-medium transition-all"
+                      title={item.name}
                     >
                       {item.name}
                     </div>
