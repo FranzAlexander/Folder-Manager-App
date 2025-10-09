@@ -10,7 +10,7 @@ pub struct AppConfig {
     pub root_directory: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileSystemEntry {
     pub name: String,
@@ -44,4 +44,17 @@ pub struct Tag {
 pub struct Status {
     pub id: i64,
     pub name: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event",
+    content = "data"
+)]
+pub enum SearchEvent {
+    Searching { entries: Vec<FileSystemEntry> },
+    Done,
+    NotFound,
 }

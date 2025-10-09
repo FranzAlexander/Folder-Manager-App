@@ -11,7 +11,9 @@ use tauri::Manager;
 
 use crate::{
     commands::{
-        file::{get_root_directory, read_directory, set_root_directory, start_executable},
+        file::{
+            get_root_directory, read_directory, search_files, set_root_directory, start_executable,
+        },
         status::{assign_status, create_status, get_status},
         tag::{assign_tag, create_tag, get_tags},
     },
@@ -42,7 +44,8 @@ pub fn run() {
             get_status,
             create_status,
             assign_status,
-            start_executable
+            start_executable,
+            search_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -27,3 +27,15 @@ export type ColumnKey =
   | "size"
   | "tags"
   | "status";
+
+export type SearchEvent =
+  | {
+      event: "searching";
+      data: { entries: FileSystemEntry[] };
+    }
+  | {
+      event: "done";
+    }
+  | {
+      event: "notFound";
+    };

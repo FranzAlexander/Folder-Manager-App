@@ -10,6 +10,9 @@
 
   let tags: Tag[] = $state([]);
   let statusList: Status[] = $state([]);
+  let search: string = $state("");
+
+  let searchTimeout: number | undefined;
 
   const fileExplorer = new FileExplorerState();
 
@@ -105,6 +108,15 @@
         <input
           bind:value={fileExplorer.currentDir}
           class="text-primary/80 bg-foreground flex-1 rounded-md p-1 text-sm outline-none"
+        />
+      </div>
+
+      <div class="flex flex-1 items-center rounded-lg">
+        <input
+          type="text"
+          class="text-primary/80 bg-foreground flex-1 rounded-md p-1 text-sm outline-none"
+          bind:value={search}
+          oninput={() => fileExplorer.search(search)}
         />
       </div>
 

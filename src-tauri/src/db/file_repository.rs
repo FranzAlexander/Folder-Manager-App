@@ -2,9 +2,12 @@ use std::collections::HashMap;
 
 use rusqlite::{params, params_from_iter, Connection};
 
-use crate::model::{FileSystemEntry, UserFileData};
+use crate::{
+    error::AppResult,
+    model::{FileSystemEntry, UserFileData},
+};
 
-pub fn select_files(conn: &Connection, paths: Vec<&str>) -> Result<Vec<UserFileData>, String> {
+pub fn select_files(conn: &Connection, paths: Vec<&str>) -> AppResult<Vec<UserFileData>> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
@@ -19,7 +22,7 @@ pub fn select_files(conn: &Connection, paths: Vec<&str>) -> Result<Vec<UserFileD
         placeholders
     );
 
-    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&query)?;
 
     let metadata = stmt
         .query_map(params_from_iter(paths), |row| {
@@ -33,19 +36,17 @@ pub fn select_files(conn: &Connection, paths: Vec<&str>) -> Result<Vec<UserFileD
                     user_notes: row.get(5)?,
                 }
             })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(metadata)
 }
 
-pub fn insert_files(conn: &Connection, entries: Vec<&FileSystemEntry>) -> Result<(), String> {
+pub fn insert_files(conn: &Connection, entries: Vec<&FileSystemEntry>) -> AppResult<()> {
     let mut stmt = conn.prepare(
         "INSERT INTO user_file_data (path, last_opened, last_updated, opened_since_update, user_notes)
         VALUES (?1, ?2, ?3, ?4, ?5)
-        ON CONFLICT(path) DO NOTHING").map_err(|e| e.to_string())?;
+        ON CONFLICT(path) DO NOTHING")?;
 
     for entry in entries {
         stmt.execute(params![
@@ -54,8 +55,7 @@ pub fn insert_files(conn: &Connection, entries: Vec<&FileSystemEntry>) -> Result
             Option::<i64>::None,
             false,
             Option::<String>::None
-        ])
-        .map_err(|e| e.to_string())?;
+        ])?;
     }
 
     Ok(())
@@ -64,7 +64,7 @@ pub fn insert_files(conn: &Connection, entries: Vec<&FileSystemEntry>) -> Result
 pub fn select_file_tags(
     conn: &Connection,
     paths: Vec<&str>,
-) -> Result<HashMap<String, Vec<i64>>, String> {
+) -> AppResult<HashMap<String, Vec<i64>>> {
     if paths.is_empty() {
         return Ok(HashMap::new());
     }
@@ -79,18 +79,16 @@ pub fn select_file_tags(
         placeholders
     );
 
-    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&query)?;
 
     let mut path_to_tags: HashMap<String, Vec<i64>> = HashMap::new();
 
-    let rows = stmt
-        .query_map(params_from_iter(paths), |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?))
-        })
-        .map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params_from_iter(paths), |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?))
+    })?;
 
     for row in rows {
-        let (path, tag_id) = row.map_err(|e| e.to_string())?;
+        let (path, tag_id) = row?;
         if let Some(tag_id) = tag_id {
             path_to_tags
                 .entry(path)
@@ -105,7 +103,7 @@ pub fn select_file_tags(
 pub fn select_file_status(
     conn: &Connection,
     paths: Vec<&str>,
-) -> Result<HashMap<String, Vec<i64>>, String> {
+) -> AppResult<HashMap<String, Vec<i64>>> {
     if paths.is_empty() {
         return Ok(HashMap::new());
     }
@@ -120,18 +118,16 @@ pub fn select_file_status(
         placeholders
     );
 
-    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&query)?;
 
     let mut path_to_status: HashMap<String, Vec<i64>> = HashMap::new();
 
-    let rows = stmt
-        .query_map(params_from_iter(paths), |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?))
-        })
-        .map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params_from_iter(paths), |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?))
+    })?;
 
     for row in rows {
-        let (path, status_id) = row.map_err(|e| e.to_string())?;
+        let (path, status_id) = row?;
         if let Some(status_id) = status_id {
             path_to_status
                 .entry(path)

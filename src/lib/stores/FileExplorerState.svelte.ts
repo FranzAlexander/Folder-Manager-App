@@ -1,5 +1,5 @@
-import type { ColumnKey, FileSystemEntry } from "$lib/types";
-import { invoke } from "@tauri-apps/api/core";
+import type { ColumnKey, FileSystemEntry, SearchEvent } from "$lib/types";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 export class FileExplorerState {
@@ -11,6 +11,12 @@ export class FileExplorerState {
   entries = $state<FileSystemEntry[]>([]);
   sortedColumn = $state<ColumnKey>("name");
   sortedDirection = $state<"asc" | "desc">("desc");
+
+  isSearching = $state(false);
+  searchQuery = $state("");
+
+  private currentSearchId = 0;
+  private searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
   get currentDir() {
     return this.history[this.historyIndex] || "";
@@ -64,6 +70,9 @@ export class FileExplorerState {
     this.history.push(path);
     this.historyIndex = this.history.length - 1;
 
+    this.searchQuery = "";
+    this.cancelSearch();
+
     this.updateEntries(path);
     this.selectedEntry = null;
   };
@@ -71,6 +80,10 @@ export class FileExplorerState {
   goBack = async () => {
     if (this.historyIndex > 0) {
       this.historyIndex--;
+
+      this.searchQuery = "";
+      this.cancelSearch();
+
       this.updateEntries(this.currentDir);
     }
   };
@@ -78,6 +91,10 @@ export class FileExplorerState {
   goForward = async () => {
     if (this.historyIndex < this.history.length - 1) {
       this.historyIndex++;
+
+      this.searchQuery = "";
+      this.cancelSearch();
+
       this.updateEntries(this.currentDir);
     }
   };
@@ -120,4 +137,76 @@ export class FileExplorerState {
       return 0;
     });
   };
+
+  search = (query: string) => {
+    this.searchQuery = query;
+
+    if (this.searchTimeout !== null) {
+      clearTimeout(this.searchTimeout);
+    }
+
+    if (query === "") {
+      this.currentSearchId++;
+      this.isSearching = false;
+      this.updateEntries(this.currentDir);
+      return;
+    }
+
+    this.searchTimeout = setTimeout(() => {
+      this.executeSearch(query);
+      this.searchTimeout = null;
+    }, 500);
+  };
+
+  private async executeSearch(name: string) {
+    const searchId = ++this.currentSearchId;
+
+    this.isSearching = true;
+    const onEvent = new Channel<SearchEvent>();
+    const newEntries: FileSystemEntry[] = [];
+
+    onEvent.onmessage = (searchEvent) => {
+      if (searchId !== this.currentSearchId) {
+        return searchEvent.event;
+      }
+
+      switch (searchEvent.event) {
+        case "searching":
+          newEntries.push(...searchEvent.data.entries);
+          this.entries = [...newEntries];
+          break;
+        case "done":
+          this.isSearching = false;
+          break;
+        case "notFound":
+          this.entries = [];
+          this.isSearching = false;
+          break;
+      }
+
+      return searchEvent.event;
+    };
+
+    if (name !== "") {
+      await invoke("search_files", {
+        path: this.currentDir,
+        name,
+        onEvent,
+      });
+    } else {
+      if (searchId === this.currentSearchId) {
+        this.isSearching = false;
+        this.entries = [];
+      }
+    }
+  }
+
+  cancelSearch() {
+    this.currentSearchId++;
+    if (this.searchTimeout !== null) {
+      clearTimeout(this.searchTimeout);
+      this.searchTimeout = null;
+    }
+    this.isSearching = false;
+  }
 }

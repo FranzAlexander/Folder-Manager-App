@@ -28,6 +28,31 @@
   let resizeStartX = $state(0);
   let resizeStartWidth = $state(0);
 
+  let scrollTop = $state(0);
+
+  const itemHeight = 34;
+  const containerHeight = 624;
+  const overscan = 5;
+
+  const visableStart = $derived(
+    Math.max(0, Math.floor(scrollTop / itemHeight) - overscan),
+  );
+
+  const visableEnd = $derived(
+    Math.min(
+      fileExplorer.entries.length,
+      Math.ceil((scrollTop + containerHeight) / itemHeight) + overscan,
+    ),
+  );
+
+  const visableItems = $derived(
+    fileExplorer.entries.slice(visableStart, visableEnd),
+  );
+
+  const totalHeight = $derived(fileExplorer.entries.length * itemHeight);
+
+  const offsetY = $derived(visableStart * itemHeight);
+
   function startResize(columnKey: ColumnKey, event: MouseEvent) {
     resizingColumn = columnKey;
     resizeStartX = event.clientX;
@@ -109,72 +134,79 @@
     {/each}
   </div>
   <ScrollArea.Root class="flex-1 overflow-hidden">
-    <ScrollArea.Viewport class="h-full w-full">
-      {#each fileExplorer.entries as entry, i (entry.path)}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex-->
-        <div
-          class="hover:bg-muted data-[selected=true]:bg-muted flex cursor-pointer px-2 py-2.5 transition-colors"
-          role="listitem"
-          data-selected={fileExplorer.selectedEntryPath === entry.path}
-          onclick={() => fileExplorer.selectEntry(entry)}
-          data-row-index={i}
-          ondblclick={() => fileExplorer.openEntry(entry)}
-        >
-          <div
-            class="flex shrink-0 items-center text-sm"
-            style="width: {getColumnWidth('name')}px;"
-          >
-            <div class="flex items-center gap-2 overflow-hidden">
-              <FileIcon file={entry} size={24} />
-              <span class="truncate">{entry.name}</span>
+    <ScrollArea.Viewport
+      class="h-full w-full scroll-smooth"
+      onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
+    >
+      <div class="relative" style="height: {totalHeight}px">
+        <div style="transform: translateY({offsetY}px)">
+          {#each visableItems as entry, i (entry.path)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex-->
+            <div
+              class="hover:bg-muted data-[selected=true]:bg-muted flex cursor-pointer px-2 py-2.5 transition-colors"
+              role="listitem"
+              data-selected={fileExplorer.selectedEntryPath === entry.path}
+              onclick={() => fileExplorer.selectEntry(entry)}
+              data-row-index={i}
+              ondblclick={() => fileExplorer.openEntry(entry)}
+            >
+              <div
+                class="flex shrink-0 items-center text-sm"
+                style="width: {getColumnWidth('name')}px;"
+              >
+                <div class="flex items-center gap-2 overflow-hidden">
+                  <FileIcon file={entry} size={24} />
+                  <span class="truncate">{entry.name}</span>
+                </div>
+              </div>
+              <div
+                class="flex shrink-0 items-center text-sm"
+                style="width: {getColumnWidth('dateModified')}px;"
+              >
+                {formateDate(entry.dateModified)}
+              </div>
+              <div
+                class="flex shrink-0 items-center text-sm"
+                style="width: {getColumnWidth('fileType')}px;"
+              >
+                {entry.fileType}
+              </div>
+              <div
+                class="flex shrink-0 items-center text-sm"
+                style="width: {getColumnWidth('size')}px;"
+              >
+                {formatFileSize(entry.size)}
+              </div>
+              <div
+                class="flex shrink-0 items-center gap-1 text-sm"
+                style="width: {getColumnWidth('tags')}px;"
+              >
+                {#each entry.tagIds as tagId (tagId)}
+                  <span
+                    class="bg-muted text-primary border-border inline-flex w-fit shrink-0 items-center justify-center rounded-md border px-2 py-0.5 text-sm font-medium"
+                  >
+                    {tags.find((t) => t.id === tagId)?.name}
+                  </span>
+                {/each}
+              </div>
+              <div
+                class="flex shrink-0 items-center text-sm"
+                style="width: {getColumnWidth('status')}px;"
+              >
+                {#each entry.statusIds as statusId (statusId)}
+                  <span
+                    class="bg-muted text-primary border-border inline-flex w-fit shrink-0 items-center justify-center rounded-md border px-2 py-0.5 text-sm font-medium"
+                  >
+                    {statusList.find((s) => s.id === statusId)?.name}
+                  </span>
+                {/each}
+              </div>
             </div>
-          </div>
-          <div
-            class="flex shrink-0 items-center text-sm"
-            style="width: {getColumnWidth('dateModified')}px;"
-          >
-            {formateDate(entry.dateModified)}
-          </div>
-          <div
-            class="flex shrink-0 items-center text-sm"
-            style="width: {getColumnWidth('fileType')}px;"
-          >
-            {entry.fileType}
-          </div>
-          <div
-            class="flex shrink-0 items-center text-sm"
-            style="width: {getColumnWidth('size')}px;"
-          >
-            {formatFileSize(entry.size)}
-          </div>
-          <div
-            class="flex shrink-0 items-center gap-1 text-sm"
-            style="width: {getColumnWidth('tags')}px;"
-          >
-            {#each entry.tagIds as tagId (tagId)}
-              <span
-                class="bg-muted text-primary border-border inline-flex w-fit shrink-0 items-center justify-center rounded-md border px-2 py-0.5 text-sm font-medium"
-              >
-                {tags.find((t) => t.id === tagId)?.name}
-              </span>
-            {/each}
-          </div>
-          <div
-            class="flex shrink-0 items-center text-sm"
-            style="width: {getColumnWidth('status')}px;"
-          >
-            {#each entry.statusIds as statusId (statusId)}
-              <span
-                class="bg-muted text-primary border-border inline-flex w-fit shrink-0 items-center justify-center rounded-md border px-2 py-0.5 text-sm font-medium"
-              >
-                {statusList.find((s) => s.id === statusId)?.name}
-              </span>
-            {/each}
-          </div>
+          {/each}
         </div>
-      {/each}
+      </div>
     </ScrollArea.Viewport>
     <ScrollArea.Scrollbar
       orientation="vertical"
