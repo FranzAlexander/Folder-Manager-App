@@ -1,18 +1,21 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { ArrowBigLeft, ArrowBigRight } from "@lucide/svelte";
+  import {
+    ArrowBigLeft,
+    ArrowBigRight,
+    EllipsisVertical,
+    Folder,
+  } from "@lucide/svelte";
   import type { Status, Tag } from "$lib/types";
   import ItemSelector from "$lib/components/ItemSelector.svelte";
   import FileTable from "$lib/components/FileTable.svelte";
   import { FileExplorerState } from "$lib/stores/FileExplorerState.svelte";
-  import { Button } from "bits-ui";
+  import { Button, DropdownMenu } from "bits-ui";
 
   let tags: Tag[] = $state([]);
   let statusList: Status[] = $state([]);
   let search: string = $state("");
-
-  let searchTimeout: number | undefined;
 
   const fileExplorer = new FileExplorerState();
 
@@ -111,10 +114,11 @@
         />
       </div>
 
-      <div class="flex flex-1 items-center rounded-lg">
+      <div class="flex min-w-72 items-center rounded-lg">
         <input
           type="text"
           class="text-primary/80 bg-foreground flex-1 rounded-md p-1 text-sm outline-none"
+          placeholder="Search here"
           bind:value={search}
           oninput={() => fileExplorer.search(search)}
         />
@@ -137,6 +141,28 @@
           disabled={!fileExplorer.selectedEntry}
         />
       </div>
+
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger
+          class="hover:bg-foreground inline-flex cursor-pointer items-center rounded-full p-1.5 select-none"
+        >
+          <EllipsisVertical />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            class="bg-popover border-border text-primary z-50 w-60 rounded-xl border px-1 py-1.5 shadow-xl outline-hidden focus-visible:outline-none"
+            sideOffset={6}
+          >
+            <DropdownMenu.Item
+              onSelect={fileExplorer.selectDirectory}
+              class="hover:bg-muted flex cursor-pointer items-center gap-2 rounded-xl px-1.5 py-1"
+            >
+              <Folder />
+              <p>Change Root</p>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
     </div>
   </div>
   {#if fileExplorer.rootDir && !fileExplorer.showSetup}

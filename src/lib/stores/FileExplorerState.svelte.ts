@@ -34,7 +34,7 @@ export class FileExplorerState {
     this.rootDir = path;
     this.history = [path];
     this.historyIndex = 0;
-    this.updateEntries(path);
+    await this.updateEntries(path);
   };
 
   selectDirectory = async () => {
@@ -46,8 +46,7 @@ export class FileExplorerState {
 
     if (selected) {
       await invoke("set_root_directory", { path: selected });
-      this.rootDir = selected;
-      this.history.push(this.rootDir);
+      await this.setRootDir(selected);
       this.showSetup = false;
     }
   };
