@@ -4,6 +4,7 @@
   import FileIcon from "./FileIcon.svelte";
   import { formateDate, formatFileSize } from "$lib/utils/formatters";
   import type { FileExplorerState } from "$lib/stores/FileExplorerState.svelte";
+  import { invoke } from "@tauri-apps/api/core";
 
   let {
     fileExplorer,
@@ -98,6 +99,27 @@
       if (next) fileExplorer.selectEntry(next);
     }
   }
+
+  function dragStart(e: DragEvent, path: string) {
+    if (!e.dataTransfer) {
+      console.error("NO DATATRANSFER!");
+      return;
+    }
+    e.dataTransfer.clearData();
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", path);
+  }
+
+  function dragOver(e: DragEvent) {
+    e.preventDefault();
+  }
+
+  async function dragDrop(e: DragEvent, path: string) {
+    const sourcePath = e.dataTransfer?.getData("text/plain") || "";
+    await invoke("move_files", { src: sourcePath, dest: path });
+    console.log(e.dataTransfer?.getData("text/plain"));
+    console.log(path);
+  }
 </script>
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={stopResize} />
@@ -133,7 +155,7 @@
       </Button.Root>
     {/each}
   </div>
-  <ScrollArea.Root class="flex-1 overflow-hidden">
+  <ScrollArea.Root class="flex-1 overflow-hidden" type="hover">
     <ScrollArea.Viewport
       class="h-full w-full scroll-smooth"
       onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
@@ -151,6 +173,10 @@
               onclick={() => fileExplorer.selectEntry(entry)}
               data-row-index={i}
               ondblclick={() => fileExplorer.openEntry(entry)}
+              draggable="true"
+              ondragstart={(e) => dragStart(e, entry.path)}
+              ondrop={(e) => dragDrop(e, entry.path)}
+              ondragover={(e) => dragOver(e)}
             >
               <div
                 class="flex shrink-0 items-center text-sm"

@@ -1,4 +1,9 @@
-use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use chrono::{DateTime, Local};
 use rusqlite::Connection;
@@ -168,6 +173,20 @@ pub async fn search_files(
     } else {
         SearchEvent::NotFound
     });
+}
+
+#[tauri::command]
+pub async fn move_files(src: String, dest: String) {
+    let src_path = Path::new(&src);
+    let dest_path = Path::new(&dest);
+
+    let dest_name = dest_path.join(src_path.file_name().unwrap());
+
+    if dest_name.try_exists().expect("Failed to check") {
+        println!("exists")
+    } else {
+        println!("doesn't exists")
+    }
 }
 
 fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileSystemEntry> {
