@@ -1,8 +1,25 @@
+use std::path::PathBuf;
+
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 pub struct AppState {
     pub conn: Connection,
+    pub file_op_entries: Vec<FileOperationEntry>,
+}
+
+pub struct FileOperationEntry {
+    pub src: PathBuf,
+    pub dest: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictingEntries {
+    pub index: usize,
+    pub name: String,
+    pub src: PathBuf,
+    pub dest: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Default)]

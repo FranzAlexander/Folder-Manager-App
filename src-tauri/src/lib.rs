@@ -12,14 +12,14 @@ use tauri::Manager;
 use crate::{
     commands::{
         file::{
-            get_root_directory, move_files, read_directory, search_files, set_root_directory,
-            start_executable,
+            get_root_directory, move_files, prepare_operation, read_directory, search_files,
+            set_root_directory, start_executable,
         },
         status::{assign_status, create_status, get_status},
         tag::{assign_tag, create_tag, get_tags},
     },
     db::db_init,
-    model::AppState,
+    model::{AppState, FileOperationEntry},
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,7 +30,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let connection = db_init(app.handle());
-            let app_data = AppState { conn: connection };
+            let app_data = AppState {
+                conn: connection,
+                file_op_entries: Vec::new(),
+            };
             app.manage(Mutex::new(app_data));
 
             Ok(())
@@ -47,7 +50,8 @@ pub fn run() {
             assign_status,
             start_executable,
             search_files,
-            move_files
+            move_files,
+            prepare_operation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

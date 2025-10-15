@@ -20,6 +20,13 @@ export interface Status {
   name: string;
 }
 
+export interface ConflictingEntries {
+  index: number;
+  name: string;
+  src: string;
+  dest: string;
+}
+
 export type ColumnKey =
   | "name"
   | "dateModified"

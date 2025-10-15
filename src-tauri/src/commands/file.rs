@@ -12,7 +12,9 @@ use tauri::Manager;
 use crate::{
     db::file_repository::{insert_files, select_file_status, select_file_tags, select_files},
     error::AppResult,
-    model::{AppConfig, AppState, FileSystemEntry, SearchEvent},
+    model::{
+        AppConfig, AppState, ConflictingEntries, FileOperationEntry, FileSystemEntry, SearchEvent,
+    },
 };
 
 #[tauri::command]
@@ -176,17 +178,63 @@ pub async fn search_files(
 }
 
 #[tauri::command]
-pub async fn move_files(src: String, dest: String) {
-    let src_path = Path::new(&src);
-    let dest_path = Path::new(&dest);
+pub async fn prepare_operation(
+    app: tauri::AppHandle,
+    src: Vec<String>,
+    dest: String,
+) -> AppResult<Vec<ConflictingEntries>> {
+    let src_paths: Vec<PathBuf> = src.iter().map(PathBuf::from).collect();
+    let dest_path = PathBuf::from(dest);
 
-    let dest_name = dest_path.join(src_path.file_name().unwrap());
+    let mut conflicting_entries: Vec<ConflictingEntries> = Vec::new();
 
-    if dest_name.try_exists().expect("Failed to check") {
-        println!("exists")
-    } else {
-        println!("doesn't exists")
+    let new_dest_paths: Vec<PathBuf> = src_paths
+        .iter()
+        .map(|sp| dest_path.join(sp.file_name().unwrap()))
+        .collect();
+
+    let state = app.state::<Mutex<AppState>>();
+    let mut app_state = state.lock().unwrap();
+
+    for (index, dest_check) in new_dest_paths.iter().enumerate() {
+        if dest_check.try_exists()? {
+            let file_name = dest_check
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+
+            conflicting_entries.push(ConflictingEntries {
+                index,
+                name: file_name,
+                src: src_paths[index].clone(),
+                dest: dest_check.clone(),
+            });
+        }
+
+        app_state.file_op_entries.push(FileOperationEntry {
+            src: src_paths[index].clone(),
+            dest: dest_check.clone(),
+        });
     }
+
+    Ok(conflicting_entries)
+}
+
+#[tauri::command]
+pub async fn move_files(app: tauri::AppHandle, src: String, dest: String) {
+    let state = app.state::<Mutex<AppState>>();
+    let mut app_state = state.lock().unwrap();
+    app_state.file_op_entries.clear();
+    // let src_path = Path::new(&src);
+    // let dest_path = Path::new(&dest);
+
+    // let dest_name = dest_path.join(src_path.file_name().unwrap());
+
+    // if dest_name.try_exists().expect("Failed to check") {
+    // } else {
+    //     println!("doesn't exists")
+    // }
 }
 
 fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileSystemEntry> {

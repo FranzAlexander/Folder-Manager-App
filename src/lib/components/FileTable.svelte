@@ -1,10 +1,17 @@
 <script lang="ts">
-  import type { ColumnKey, FileSystemEntry, Status, Tag } from "$lib/types";
-  import { Button, ScrollArea, Separator } from "bits-ui";
+  import type {
+    ColumnKey,
+    ConflictingEntries,
+    FileSystemEntry,
+    Status,
+    Tag,
+  } from "$lib/types";
+  import { AlertDialog, Button, ScrollArea, Separator } from "bits-ui";
   import FileIcon from "./FileIcon.svelte";
   import { formateDate, formatFileSize } from "$lib/utils/formatters";
   import type { FileExplorerState } from "$lib/stores/FileExplorerState.svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import ConflictDialog from "./ConflictDialog.svelte";
 
   let {
     fileExplorer,
@@ -24,6 +31,9 @@
     { key: "tags" as ColumnKey, label: "Tags", width: 200 },
     { key: "status" as ColumnKey, label: "Status", width: 150 },
   ]);
+
+  let moveAlertOpen = $state(false);
+  let conflictEntries = $state<ConflictingEntries[]>([]);
 
   let resizingColumn = $state<ColumnKey | null>(null);
   let resizeStartX = $state(0);
@@ -116,13 +126,30 @@
 
   async function dragDrop(e: DragEvent, path: string) {
     const sourcePath = e.dataTransfer?.getData("text/plain") || "";
-    await invoke("move_files", { src: sourcePath, dest: path });
-    console.log(e.dataTransfer?.getData("text/plain"));
-    console.log(path);
+    let conflicts: ConflictingEntries[] = await invoke("prepare_operation", {
+      src: [sourcePath],
+      dest: path,
+    });
+
+    if (conflicts.length !== 0) {
+      conflictEntries = conflicts;
+      moveAlertOpen = true;
+    }
+  }
+
+  async function cancelOperation() {
+    await invoke("move_files", { src: "", dest: "" });
+    moveAlertOpen = false;
   }
 </script>
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={stopResize} />
+
+<ConflictDialog
+  isOpen={moveAlertOpen}
+  onCancel={cancelOperation}
+  {conflictEntries}
+/>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
