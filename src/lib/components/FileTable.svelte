@@ -1,7 +1,7 @@
 <script lang="ts">
   import type {
     ColumnKey,
-    ConflictingEntries,
+    ConflictingEntry,
     FileSystemEntry,
     Status,
     Tag,
@@ -33,7 +33,7 @@
   ]);
 
   let moveAlertOpen = $state(false);
-  let conflictEntries = $state<ConflictingEntries[]>([]);
+  let conflictEntries = $state<ConflictingEntry[]>([]);
 
   let resizingColumn = $state<ColumnKey | null>(null);
   let resizeStartX = $state(0);
@@ -110,14 +110,19 @@
     }
   }
 
-  function dragStart(e: DragEvent, path: string) {
+  function dragStart(e: DragEvent, path: string, isDir: boolean) {
     if (!e.dataTransfer) {
       console.error("NO DATATRANSFER!");
       return;
     }
     e.dataTransfer.clearData();
+
+    const sourceEntry = {
+      path: path,
+      isDir: isDir,
+    };
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", path);
+    e.dataTransfer.setData("text/plain", JSON.stringify([sourceEntry]));
   }
 
   function dragOver(e: DragEvent) {
@@ -125,20 +130,31 @@
   }
 
   async function dragDrop(e: DragEvent, path: string) {
-    const sourcePath = e.dataTransfer?.getData("text/plain") || "";
-    let conflicts: ConflictingEntries[] = await invoke("prepare_operation", {
-      src: [sourcePath],
+    const data = e.dataTransfer?.getData("text/plain");
+    if (!data) return;
+
+    const sourceEntries = JSON.parse(data);
+
+    let conflicts: ConflictingEntry[] = await invoke("prepare_operation", {
+      srcEntries: sourceEntries,
       dest: path,
+      operationType: "move",
     });
+
+    console.log(conflicts);
 
     if (conflicts.length !== 0) {
       conflictEntries = conflicts;
       moveAlertOpen = true;
+    } else {
+      await invoke("execute_operation", {
+        conflictResolutions: {},
+      });
     }
   }
 
   async function cancelOperation() {
-    await invoke("move_files", { src: "", dest: "" });
+    await invoke("cancel_operation");
     moveAlertOpen = false;
   }
 </script>
@@ -201,7 +217,7 @@
               data-row-index={i}
               ondblclick={() => fileExplorer.openEntry(entry)}
               draggable="true"
-              ondragstart={(e) => dragStart(e, entry.path)}
+              ondragstart={(e) => dragStart(e, entry.path, entry.isDir)}
               ondrop={(e) => dragDrop(e, entry.path)}
               ondragover={(e) => dragOver(e)}
             >

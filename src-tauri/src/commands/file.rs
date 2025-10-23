@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -13,7 +13,8 @@ use crate::{
     db::file_repository::{insert_files, select_file_status, select_file_tags, select_files},
     error::AppResult,
     model::{
-        AppConfig, AppState, ConflictingEntries, FileOperationEntry, FileSystemEntry, SearchEvent,
+        AppConfig, AppState, ConflictResolution, ConflictingEntry, FileOperationEntry,
+        FileSystemEntry, OperationType, SearchEvent, SourceEntry,
     },
 };
 
@@ -123,51 +124,50 @@ pub async fn search_files(
     name: String,
     on_event: tauri::ipc::Channel<SearchEvent>,
 ) {
-    let mut dirs_to_read = vec![PathBuf::from(path)];
     let mut found_any = false;
+    let mut matching_entries: Vec<FileSystemEntry> = Vec::new();
+    let name_lower = name.to_lowercase();
 
-    while let Some(dir) = dirs_to_read.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
+    let _ = traverse_directory(PathBuf::from(path), |entry, metadata| {
+        let file_name_os = entry.file_name();
+        let Some(file_name) = file_name_os.to_str() else {
+            return Ok(());
         };
-        let mut matching_entries: Vec<FileSystemEntry> = Vec::new();
 
-        for entry in entries.filter_map(|e| e.ok()) {
-            let Some(metadata) = entry.metadata().ok() else {
-                continue;
-            };
-
-            if metadata.is_dir() {
-                dirs_to_read.push(entry.path());
-            }
-
-            let file_name_os = entry.file_name();
-            let Some(file_name) = file_name_os.to_str() else {
-                continue;
-            };
-
-            if !file_name.to_lowercase().contains(&name.to_lowercase()) {
-                continue;
-            }
-
-            if let Some(file_entry) = build_file_entry(entry, metadata) {
-                matching_entries.push(file_entry)
-            }
+        if !file_name.to_lowercase().contains(&name_lower) {
+            return Ok(());
         }
-        if !matching_entries.is_empty() {
+
+        if let Some(file_entry) = build_file_entry(entry, metadata) {
+            matching_entries.push(file_entry);
+        }
+
+        if matching_entries.len() >= 50 {
             found_any = true;
             let state = app.state::<Mutex<AppState>>();
             let app_state = state.lock().unwrap();
-            let conn = &app_state.conn;
-
-            let _ = update_with_tags_and_status(conn, &mut matching_entries);
-
+            update_with_tags_and_status(&app_state.conn, &mut matching_entries).ok();
             drop(app_state);
 
             let _ = on_event.send(SearchEvent::Searching {
-                entries: matching_entries,
+                entries: matching_entries.clone(),
             });
+            matching_entries.clear();
         }
+
+        Ok(())
+    });
+
+    if !matching_entries.is_empty() {
+        found_any = true;
+        let state = app.state::<Mutex<AppState>>();
+        let app_state = state.lock().unwrap();
+        update_with_tags_and_status(&app_state.conn, &mut matching_entries).ok();
+        drop(app_state);
+
+        let _ = on_event.send(SearchEvent::Searching {
+            entries: matching_entries,
+        });
     }
 
     let _ = on_event.send(if found_any {
@@ -175,66 +175,6 @@ pub async fn search_files(
     } else {
         SearchEvent::NotFound
     });
-}
-
-#[tauri::command]
-pub async fn prepare_operation(
-    app: tauri::AppHandle,
-    src: Vec<String>,
-    dest: String,
-) -> AppResult<Vec<ConflictingEntries>> {
-    let src_paths: Vec<PathBuf> = src.iter().map(PathBuf::from).collect();
-    let dest_path = PathBuf::from(dest);
-
-    let mut conflicting_entries: Vec<ConflictingEntries> = Vec::new();
-
-    let new_dest_paths: Vec<PathBuf> = src_paths
-        .iter()
-        .map(|sp| dest_path.join(sp.file_name().unwrap()))
-        .collect();
-
-    let state = app.state::<Mutex<AppState>>();
-    let mut app_state = state.lock().unwrap();
-
-    for (index, dest_check) in new_dest_paths.iter().enumerate() {
-        if dest_check.try_exists()? {
-            let file_name = dest_check
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-
-            conflicting_entries.push(ConflictingEntries {
-                index,
-                name: file_name,
-                src: src_paths[index].clone(),
-                dest: dest_check.clone(),
-            });
-        }
-
-        app_state.file_op_entries.push(FileOperationEntry {
-            src: src_paths[index].clone(),
-            dest: dest_check.clone(),
-        });
-    }
-
-    Ok(conflicting_entries)
-}
-
-#[tauri::command]
-pub async fn move_files(app: tauri::AppHandle, src: String, dest: String) {
-    let state = app.state::<Mutex<AppState>>();
-    let mut app_state = state.lock().unwrap();
-    app_state.file_op_entries.clear();
-    // let src_path = Path::new(&src);
-    // let dest_path = Path::new(&dest);
-
-    // let dest_name = dest_path.join(src_path.file_name().unwrap());
-
-    // if dest_name.try_exists().expect("Failed to check") {
-    // } else {
-    //     println!("doesn't exists")
-    // }
 }
 
 fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileSystemEntry> {
@@ -318,5 +258,32 @@ fn update_with_tags_and_status(
             entry.status_ids = status_ids.clone();
         }
     }
+    Ok(())
+}
+
+pub fn traverse_directory<F>(root: PathBuf, mut callback: F) -> AppResult<()>
+where
+    F: FnMut(fs::DirEntry, fs::Metadata) -> AppResult<()>,
+{
+    let mut dirs_to_read = vec![root];
+
+    while let Some(dir) = dirs_to_read.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+
+        for entry in entries.filter_map(|e| e.ok()) {
+            let Some(metadata) = entry.metadata().ok() else {
+                continue;
+            };
+
+            if metadata.is_dir() {
+                dirs_to_read.push(entry.path());
+            }
+
+            callback(entry, metadata)?;
+        }
+    }
+
     Ok(())
 }

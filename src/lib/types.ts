@@ -20,8 +20,7 @@ export interface Status {
   name: string;
 }
 
-export interface ConflictingEntries {
-  index: number;
+export interface ConflictingEntry {
   name: string;
   src: string;
   dest: string;
@@ -46,3 +45,7 @@ export type SearchEvent =
   | {
       event: "notFound";
     };
+
+export type ConflictResolution = "skip" | "keep" | "replace";
+
+export type OperationType = "Move" | "Copy";

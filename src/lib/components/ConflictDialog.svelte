@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { ConflictingEntries } from "$lib/types";
-  import { X } from "@lucide/svelte";
-  import { Button, Checkbox, Dialog, RadioGroup, ScrollArea } from "bits-ui";
+  import type { ConflictingEntry, ConflictResolution } from "$lib/types";
+  import { X, TriangleAlert } from "@lucide/svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { Button, Dialog, RadioGroup, ScrollArea } from "bits-ui";
 
   let {
     isOpen = $bindable(),
@@ -10,11 +11,21 @@
   }: {
     isOpen: boolean;
     onCancel?: () => Promise<void>;
-    conflictEntries: ConflictingEntries[];
+    conflictEntries: ConflictingEntry[];
   } = $props();
 
-  let applyToAll = $state(false);
   let actionTaken = $state(false);
+  let conflictResolutions = $state<Map<string, ConflictResolution>>(new Map());
+
+  const conflictCount = $derived(conflictEntries.length);
+  const allResolved = $derived(
+    conflictEntries.every((entry) => conflictResolutions.has(entry.src)),
+  );
+
+  function handleResolutionChange(src: string, value: ConflictResolution) {
+    conflictResolutions.set(src, value);
+    conflictResolutions = new Map(conflictResolutions);
+  }
 
   function handleOpenChange(open: boolean) {
     if (!open && !actionTaken) {
@@ -22,104 +33,166 @@
     }
   }
 
-  const conflictCount = $derived(conflictEntries.length);
+  function applyToAll(resolution: ConflictResolution) {
+    conflictEntries.forEach((entry) => {
+      conflictResolutions.set(entry.src, resolution);
+    });
+
+    conflictResolutions = new Map(conflictResolutions);
+  }
+
+  async function handleResolve() {
+    console.log(Object.fromEntries(conflictResolutions));
+
+    await invoke("execute_operation", {
+      conflictResolutions: Object.fromEntries(conflictResolutions),
+    });
+  }
 </script>
 
 <Dialog.Root bind:open={isOpen} onOpenChange={handleOpenChange}>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 z-50 bg-black/50" />
+    <Dialog.Overlay
+      class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+    />
     <Dialog.Content
-      class="border-border bg-foreground text-primary fixed top-1/2 left-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg"
+      class="border-border bg-foreground text-primary data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-1/2 left-1/2 z-50 w-full max-w-4xl -translate-1/2 rounded-xl border p-1.5 shadow-2xl"
     >
-      <Dialog.Title class="mb-2 text-xl font-semibold">
-        {conflictCount} File{conflictCount > 1 ? "s" : ""} Already Exist
-      </Dialog.Title>
-      <ScrollArea.Root class="border-border bg-background mb-4 h-96 rounded-md">
-        <ScrollArea.Viewport class="h-full p-1">
-          <div class="bg-foreground border-border sticky top-0 z-10 border-b">
-            <div
-              class="flex items-center gap-4 px-6 py-3 text-sm font-semibold"
-            >
-              <div class="w-24 flex-shrink-0">Name</div>
-              <div class="w-24 min-w-0">Source</div>
-              <div class="w-24 min-w-0">Destination</div>
-              <div class="flex">
-                <div class="w-16 flex-shrink-0 text-center">Skip</div>
-                <div class="w-16 flex-shrink-0 text-center">Keep</div>
-                <div class="w-20 flex-shrink-0 text-center">Replace</div>
+      <div class="flex items-start gap-4 px-6 py-5">
+        <div
+          class="bg-accent/10 border-accent/20 flex size-10 shrink-0 items-center justify-center rounded-lg border"
+        >
+          <TriangleAlert class="text-accent size-5" />
+        </div>
+        <div class="flex-1">
+          <Dialog.Title class="text-xl font-semibold"
+            >File Conflicts Detected</Dialog.Title
+          >
+          <p class="text-muted-foreground mt-1.5 text-sm">
+            {conflictCount} File{conflictCount > 1 ? "s" : ""} Already Exist
+          </p>
+        </div>
+        <Dialog.Close
+          class="hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-destructive -mt-1 -mr-1 cursor-pointer rounded-lg p-2 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+          aria-label="Close"
+        >
+          <X class="size-5" />
+        </Dialog.Close>
+      </div>
+      <div
+        class="bg-background border-border mb-3 flex flex-col rounded-md border"
+      >
+        <div class="border-border bg-foreground/80 border-b">
+          <div
+            class="grid grid-cols-[20%_30%_30%_20%] px-3 py-2 text-xs font-semibold"
+          >
+            <div class="text-primary">Name</div>
+            <div class="text-primary">Source</div>
+            <div class="text-primary">Destination</div>
+            <div class="text-primary">
+              <div class="grid grid-cols-3 place-items-center gap-1">
+                <span>Skip</span>
+                <span>Keep</span>
+                <span>Replace</span>
               </div>
             </div>
           </div>
-          <div class="space-y-3">
-            {#each conflictEntries as conflict}
-              <div
-                class="border-border bg-foreground hover:bg-muted flex items-center gap-4 border-b py-3 transition-colors"
-              >
-                <div class="w-24 flex-shrink-0 truncate text-sm font-medium">
-                  {conflict.name}
-                </div>
-                <div class="w-24 min-w-0 truncate text-xs" title={conflict.src}>
-                  {conflict.src}
-                </div>
-                <div
-                  class="w-24 min-w-0 truncate text-xs"
-                  title={conflict.dest}
-                >
-                  {conflict.dest}
-                </div>
-                <div>
-                  <RadioGroup.Root class="flex">
-                    <div>
-                      <RadioGroup.Item
-                        id="skip"
-                        value="skip"
-                        class="border-border-input bg-background hover:border-dark-40 data-[state=checked]:border-accent size-5 shrink-0 cursor-default rounded-full border transition-all duration-100 ease-in-out data-[state=checked]:border-6"
-                      />
-                    </div>
-                    <div>
-                      <RadioGroup.Item
-                        id="keep"
-                        value="keep"
-                        class="border-border-input bg-background hover:border-dark-40 data-[state=checked]:border-foreground size-5 shrink-0 cursor-default rounded-full border transition-all duration-100 ease-in-out data-[state=checked]:border-6"
-                      />
-                    </div>
-                    <div>
-                      <RadioGroup.Item
-                        id="replace"
-                        value="replace"
-                        class="border-border-input bg-background hover:border-dark-40 data-[state=checked]:border-foreground size-5 shrink-0 cursor-default rounded-full border transition-all duration-100 ease-in-out data-[state=checked]:border-6"
-                      />
-                    </div>
-                  </RadioGroup.Root>
-                </div>
-              </div>
-            {/each}
-          </div>
-        </ScrollArea.Viewport>
-      </ScrollArea.Root>
+        </div>
 
-      <div class="flex gap-3">
+        <ScrollArea.Root class="h-80 ">
+          <ScrollArea.Viewport class="h-full w-full">
+            <div class="flex flex-col">
+              {#each conflictEntries as item (item.src)}
+                <div
+                  class="hover:bg-muted grid grid-cols-[20%_30%_30%_20%] px-3 py-2 transition-colors"
+                >
+                  <div class="min-w-0">
+                    <div class="truncate" title={item.name}>
+                      {item.name}
+                    </div>
+                  </div>
+                  <div class="min-w-0">
+                    <div class=" truncate" title={item.src}>
+                      {item.src}
+                    </div>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="truncate" title={item.dest}>
+                      {item.dest}
+                    </div>
+                  </div>
+                  <div>
+                    <RadioGroup.Root
+                      value={conflictResolutions.get(item.src) ?? ""}
+                      onValueChange={(value) =>
+                        handleResolutionChange(
+                          item.src,
+                          value as ConflictResolution,
+                        )}
+                      orientation="horizontal"
+                      class="grid grid-cols-3 place-items-center gap-1"
+                    >
+                      <RadioGroup.Item
+                        value="skip"
+                        class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
+                      />
+                      <RadioGroup.Item
+                        value="keep"
+                        class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
+                      />
+                      <RadioGroup.Item
+                        value="replace"
+                        class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
+                      />
+                    </RadioGroup.Root>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </ScrollArea.Viewport>
+          <ScrollArea.Scrollbar
+            orientation="vertical"
+            class="hover:bg-muted flex w-2 touch-none p-px transition-colors"
+          >
+            <ScrollArea.Thumb
+              class="bg-border hover:bg-border/80 relative flex-1 rounded-full transition-colors"
+            />
+          </ScrollArea.Scrollbar>
+        </ScrollArea.Root>
+      </div>
+
+      <div
+        class="border-border flex items-center justify-between gap-3 border-t px-5 py-3"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-muted-foreground text-xs font-medium"
+            >Apply to all:</span
+          >
+          <div class="flex gap-1.5">
+            <Button.Root
+              onclick={() => applyToAll("skip")}
+              class="border-border hover:bg-muted rounded border bg-transparent px-2.5 py-1 text-xs font-medium transition-colors"
+              >Skip</Button.Root
+            >
+            <Button.Root
+              onclick={() => applyToAll("keep")}
+              class="border-border hover:bg-muted rounded border bg-transparent px-2.5 py-1 text-xs font-medium transition-colors"
+              >Keep</Button.Root
+            >
+            <Button.Root
+              onclick={() => applyToAll("replace")}
+              class="border-border hover:bg-muted rounded border bg-transparent px-2.5 py-1 text-xs font-medium transition-colors"
+              >Replace</Button.Root
+            >
+          </div>
+        </div>
         <Button.Root
-          class="border-border hover:bg-accent cursor-pointer rounded-md border px-4 py-2 text-sm font-medium transition-colors"
-          >Skip</Button.Root
-        >
-        <Button.Root
-          class="border-border hover:bg-accent cursor-pointer rounded-md border px-4 py-2 text-sm font-medium transition-colors"
-          >Keep Both</Button.Root
-        >
-        <Button.Root
-          class="border-border hover:bg-accent cursor-pointer rounded-md border px-4 py-2 text-sm font-medium transition-colors"
-          >Replace</Button.Root
+          disabled={!allResolved}
+          onclick={handleResolve}
+          class="bg-accent text-accent-foreground hover:bg-accent/90 rounded px-4 py-1.5 text-xs font-semibold transition-all disabled:pointer-events-none disabled:opacity-50"
+          >Apply</Button.Root
         >
       </div>
-      <Dialog.Close
-        class="absolute top-5 right-5 cursor-pointer rounded-lg p-2 hover:bg-red-500"
-      >
-        <div>
-          <X class="size-5" />
-          <span class="sr-only">Close</span>
-        </div>
-      </Dialog.Close>
     </Dialog.Content>
   </Dialog.Portal>
 </Dialog.Root>

@@ -6,6 +6,14 @@ use serde::{Deserialize, Serialize};
 pub struct AppState {
     pub conn: Connection,
     pub file_op_entries: Vec<FileOperationEntry>,
+    pub operation_type: Option<OperationType>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceEntry {
+    pub path: String,
+    pub is_dir: bool,
 }
 
 pub struct FileOperationEntry {
@@ -15,8 +23,7 @@ pub struct FileOperationEntry {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ConflictingEntries {
-    pub index: usize,
+pub struct ConflictingEntry {
     pub name: String,
     pub src: PathBuf,
     pub dest: PathBuf,
@@ -74,4 +81,19 @@ pub enum SearchEvent {
     Searching { entries: Vec<FileSystemEntry> },
     Done,
     NotFound,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ConflictResolution {
+    Skip,
+    Keep,
+    Replace,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum OperationType {
+    Copy,
+    Move,
 }
