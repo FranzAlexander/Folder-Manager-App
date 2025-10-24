@@ -12,6 +12,7 @@
   import type { FileExplorerState } from "$lib/stores/FileExplorerState.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import ConflictDialog from "./ConflictDialog.svelte";
+  import { createVirtualScroll } from "$lib/runes/virtualScroll.svelte";
 
   let {
     fileExplorer,
@@ -39,30 +40,12 @@
   let resizeStartX = $state(0);
   let resizeStartWidth = $state(0);
 
-  let scrollTop = $state(0);
-
-  const itemHeight = 34;
-  const containerHeight = 624;
-  const overscan = 5;
-
-  const visableStart = $derived(
-    Math.max(0, Math.floor(scrollTop / itemHeight) - overscan),
-  );
-
-  const visableEnd = $derived(
-    Math.min(
-      fileExplorer.entries.length,
-      Math.ceil((scrollTop + containerHeight) / itemHeight) + overscan,
-    ),
-  );
-
-  const visableItems = $derived(
-    fileExplorer.entries.slice(visableStart, visableEnd),
-  );
-
-  const totalHeight = $derived(fileExplorer.entries.length * itemHeight);
-
-  const offsetY = $derived(visableStart * itemHeight);
+  const virtualScroll = createVirtualScroll<FileSystemEntry>({
+    items: () => fileExplorer.entries,
+    itemHeight: 34,
+    containerHeight: 624,
+    overscan: 20,
+  });
 
   function startResize(columnKey: ColumnKey, event: MouseEvent) {
     resizingColumn = columnKey;
@@ -141,8 +124,6 @@
       operationType: "move",
     });
 
-    console.log(conflicts);
-
     if (conflicts.length !== 0) {
       conflictEntries = conflicts;
       moveAlertOpen = true;
@@ -201,11 +182,11 @@
   <ScrollArea.Root class="flex-1 overflow-hidden" type="hover">
     <ScrollArea.Viewport
       class="h-full w-full scroll-smooth"
-      onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
+      onscroll={(e) => (virtualScroll.scrollTop = e.currentTarget.scrollTop)}
     >
-      <div class="relative" style="height: {totalHeight}px">
-        <div style="transform: translateY({offsetY}px)">
-          {#each visableItems as entry, i (entry.path)}
+      <div class="relative" style="height: {virtualScroll.totalHeight}px">
+        <div style="transform: translateY({virtualScroll.offsetY}px)">
+          {#each virtualScroll.visibleItems as entry, i (entry.path)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_no_noninteractive_tabindex-->

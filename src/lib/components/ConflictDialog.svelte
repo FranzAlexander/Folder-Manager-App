@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createVirtualScroll } from "$lib/runes/virtualScroll.svelte";
   import type { ConflictingEntry, ConflictResolution } from "$lib/types";
   import { X, TriangleAlert } from "@lucide/svelte";
   import { invoke } from "@tauri-apps/api/core";
@@ -22,6 +23,13 @@
     conflictEntries.every((entry) => conflictResolutions.has(entry.src)),
   );
 
+  const virtualScroll = createVirtualScroll<ConflictingEntry>({
+    items: () => conflictEntries,
+    itemHeight: 34,
+    containerHeight: 624,
+    overscan: 20,
+  });
+
   function handleResolutionChange(src: string, value: ConflictResolution) {
     conflictResolutions.set(src, value);
     conflictResolutions = new Map(conflictResolutions);
@@ -42,11 +50,11 @@
   }
 
   async function handleResolve() {
-    console.log(Object.fromEntries(conflictResolutions));
-
     await invoke("execute_operation", {
       conflictResolutions: Object.fromEntries(conflictResolutions),
     });
+
+    isOpen = false;
   }
 </script>
 
@@ -100,54 +108,63 @@
         </div>
 
         <ScrollArea.Root class="h-80 ">
-          <ScrollArea.Viewport class="h-full w-full">
-            <div class="flex flex-col">
-              {#each conflictEntries as item (item.src)}
-                <div
-                  class="hover:bg-muted grid grid-cols-[20%_30%_30%_20%] px-3 py-2 transition-colors"
-                >
-                  <div class="min-w-0">
-                    <div class="truncate" title={item.name}>
-                      {item.name}
+          <ScrollArea.Viewport
+            class="h-full w-full"
+            onscroll={(e) =>
+              (virtualScroll.scrollTop = e.currentTarget.scrollTop)}
+          >
+            <div class="relative" style="height: {virtualScroll.totalHeight}px">
+              <div
+                class="flex flex-col"
+                style="transform: translateY({virtualScroll.offsetY}px)"
+              >
+                {#each virtualScroll.visibleItems as item (item.src)}
+                  <div
+                    class="hover:bg-muted grid grid-cols-[20%_30%_30%_20%] px-3 py-2 transition-colors"
+                  >
+                    <div class="min-w-0">
+                      <div class="truncate" title={item.name}>
+                        {item.name}
+                      </div>
+                    </div>
+                    <div class="min-w-0">
+                      <div class=" truncate" title={item.src}>
+                        {item.src}
+                      </div>
+                    </div>
+                    <div class="min-w-0">
+                      <div class="truncate" title={item.dest}>
+                        {item.dest}
+                      </div>
+                    </div>
+                    <div>
+                      <RadioGroup.Root
+                        value={conflictResolutions.get(item.src) ?? ""}
+                        onValueChange={(value) =>
+                          handleResolutionChange(
+                            item.src,
+                            value as ConflictResolution,
+                          )}
+                        orientation="horizontal"
+                        class="grid grid-cols-3 place-items-center gap-1"
+                      >
+                        <RadioGroup.Item
+                          value="skip"
+                          class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
+                        />
+                        <RadioGroup.Item
+                          value="keep"
+                          class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
+                        />
+                        <RadioGroup.Item
+                          value="replace"
+                          class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
+                        />
+                      </RadioGroup.Root>
                     </div>
                   </div>
-                  <div class="min-w-0">
-                    <div class=" truncate" title={item.src}>
-                      {item.src}
-                    </div>
-                  </div>
-                  <div class="min-w-0">
-                    <div class="truncate" title={item.dest}>
-                      {item.dest}
-                    </div>
-                  </div>
-                  <div>
-                    <RadioGroup.Root
-                      value={conflictResolutions.get(item.src) ?? ""}
-                      onValueChange={(value) =>
-                        handleResolutionChange(
-                          item.src,
-                          value as ConflictResolution,
-                        )}
-                      orientation="horizontal"
-                      class="grid grid-cols-3 place-items-center gap-1"
-                    >
-                      <RadioGroup.Item
-                        value="skip"
-                        class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
-                      />
-                      <RadioGroup.Item
-                        value="keep"
-                        class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
-                      />
-                      <RadioGroup.Item
-                        value="replace"
-                        class="bg-background border-border hover:border-primary data-[state=checked]:border-accent size-4 shrink-0 cursor-default rounded-full border-2 transition-all data-[state=checked]:border-[5px]"
-                      />
-                    </RadioGroup.Root>
-                  </div>
-                </div>
-              {/each}
+                {/each}
+              </div>
             </div>
           </ScrollArea.Viewport>
           <ScrollArea.Scrollbar

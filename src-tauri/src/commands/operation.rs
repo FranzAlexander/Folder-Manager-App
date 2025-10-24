@@ -23,7 +23,11 @@ pub async fn prepare_operation(
     operation_type: OperationType,
 ) -> AppResult<Vec<ConflictingEntry>> {
     let mut operations: Vec<(PathBuf, PathBuf)> = Vec::new();
-    let dest_path = PathBuf::from(dest);
+    let dest_path = PathBuf::from(dest.clone());
+
+    println!("{src_entries :?}");
+    println!("{dest}");
+    println!("{operation_type:?}");
 
     for src in src_entries.into_iter() {
         if src.is_dir {
