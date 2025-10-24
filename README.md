@@ -1,7 +1,5 @@
-# Tauri + SvelteKit + TypeScript
+# Folder-Manager-App (Name TBD)
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+**This project is in active pre-release development.**
 
-## Recommended IDE Setup
-
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+Please see the [Dev Branch](https://github.com/FranzAlexander/Folder-Manager-App/tree/dev) for the latest version and documentation.
