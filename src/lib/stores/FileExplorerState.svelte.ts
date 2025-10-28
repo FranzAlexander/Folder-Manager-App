@@ -1,16 +1,18 @@
 import type { ColumnKey, FileSystemEntry, SearchEvent } from "$lib/types";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { SelectionState } from "./SelectionState.svelte";
 
 export class FileExplorerState {
   rootDir = $state<string>("");
   showSetup = $state(false);
   history = $state<string[]>([]);
   historyIndex = $state<number>(0);
-  selectedEntry = $state<FileSystemEntry | null>(null);
   entries = $state<FileSystemEntry[]>([]);
   sortedColumn = $state<ColumnKey>("name");
   sortedDirection = $state<"asc" | "desc">("desc");
+
+  selection = new SelectionState();
 
   isSearching = $state(false);
   searchQuery = $state("");
@@ -22,8 +24,26 @@ export class FileExplorerState {
     return this.history[this.historyIndex] || "";
   }
 
-  get selectedEntryPath() {
+  get selectedEntry(): FileSystemEntry | null {
+    if (this.selection.lastSelectedIndex === null) {
+      return null;
+    }
+
+    if (this.selection.lastSelectedIndex >= this.entries.length) {
+      return null;
+    }
+
+    return this.entries[this.selection.lastSelectedIndex];
+  }
+
+  get selectedEntryPath(): string | undefined {
     return this.selectedEntry?.path;
+  }
+
+  get selectedEntries(): FileSystemEntry[] {
+    return this.entries.filter((entry) =>
+      this.selection.isSelected(entry.path),
+    );
   }
 
   updateEntries = async (path: string) => {
@@ -73,7 +93,7 @@ export class FileExplorerState {
     this.cancelSearch();
 
     this.updateEntries(path);
-    this.selectedEntry = null;
+    this.selection.clearSelection();
   };
 
   goBack = async () => {
@@ -82,6 +102,8 @@ export class FileExplorerState {
 
       this.searchQuery = "";
       this.cancelSearch();
+
+      this.selection.clearSelection();
 
       this.updateEntries(this.currentDir);
     }
@@ -94,17 +116,51 @@ export class FileExplorerState {
       this.searchQuery = "";
       this.cancelSearch();
 
+      this.selection.clearSelection();
+
       this.updateEntries(this.currentDir);
     }
   };
 
-  selectEntry = (entry: FileSystemEntry) => {
-    this.selectedEntry = entry;
-  };
+  handleEntryClick(entry: FileSystemEntry, index: number, event: MouseEvent) {
+    if (event.shiftKey) {
+      this.selection.selectRange(index, this.entries);
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      this.selection.toggleSelect(entry, index);
+      return;
+    }
+
+    this.selection.selectSingle(entry, index);
+  }
 
   handleMouseButton = (event: MouseEvent) => {
     if (event.button === 3) this.goBack();
     if (event.button === 4) this.goForward();
+  };
+
+  handleKeydown = (event: KeyboardEvent) => {
+    const navigationKeys = [
+      "ArrowUp",
+      "ArrowDown",
+      "Home",
+      "End",
+      "PageUp",
+      "PageDown",
+    ];
+
+    if ((event.ctrlKey || event.metaKey) && event.key === "a") {
+      event.preventDefault();
+      this.selection.selectAll(this.entries);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      this.selection.clearSelection();
+      return;
+    }
   };
 
   startExecutable = async (path: string) => {

@@ -6,7 +6,7 @@
     Status,
     Tag,
   } from "$lib/types";
-  import { AlertDialog, Button, ScrollArea, Separator } from "bits-ui";
+  import { Button, ScrollArea, Separator } from "bits-ui";
   import FileIcon from "./FileIcon.svelte";
   import { formateDate, formatFileSize } from "$lib/utils/formatters";
   import type { FileExplorerState } from "$lib/stores/FileExplorerState.svelte";
@@ -39,6 +39,8 @@
   let resizingColumn = $state<ColumnKey | null>(null);
   let resizeStartX = $state(0);
   let resizeStartWidth = $state(0);
+
+  const currentShortcut = $state<Set<String>>(new Set());
 
   const virtualScroll = createVirtualScroll<FileSystemEntry>({
     items: () => fileExplorer.entries,
@@ -74,25 +76,6 @@
     return columns.find((c) => c.key === key)?.width || 100;
   }
 
-  function onKeydown(e: KeyboardEvent) {
-    const idx = fileExplorer.entries.findIndex(
-      (x) => x.path === fileExplorer.selectedEntryPath,
-    );
-    if (idx === -1) return;
-
-    e.preventDefault();
-
-    if (e.key === "ArrowUp") {
-      const prev = fileExplorer.entries[idx - 1];
-      if (prev) fileExplorer.selectEntry(prev);
-    }
-
-    if (e.key === "ArrowDown") {
-      const next = fileExplorer.entries[idx + 1];
-      if (next) fileExplorer.selectEntry(next);
-    }
-  }
-
   function dragStart(e: DragEvent, path: string, isDir: boolean) {
     if (!e.dataTransfer) {
       console.error("NO DATATRANSFER!");
@@ -100,12 +83,26 @@
     }
     e.dataTransfer.clearData();
 
-    const sourceEntry = {
-      path: path,
-      isDir: isDir,
-    };
+    const isDraggedItemSelected = fileExplorer.selection.isSelected(path);
+
+    let sourceEntries = isDraggedItemSelected
+      ? fileExplorer.entries
+          .filter((entry) => fileExplorer.selection.isSelected(entry.path))
+          .map((entry) => ({
+            path: entry.path,
+            isDir: entry.isDir,
+          }))
+      : [
+          {
+            path: path,
+            isDir: isDir,
+          },
+        ];
+
+    if (sourceEntries.length === 0) return;
+
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", JSON.stringify([sourceEntry]));
+    e.dataTransfer.setData("text/plain", JSON.stringify(sourceEntries));
   }
 
   function dragOver(e: DragEvent) {
@@ -131,6 +128,7 @@
       await invoke("execute_operation", {
         conflictResolutions: {},
       });
+      0;
     }
   }
 
@@ -140,7 +138,16 @@
   }
 </script>
 
-<svelte:window onmousemove={handleMouseMove} onmouseup={stopResize} />
+<svelte:window
+  onmousemove={handleMouseMove}
+  onmouseup={stopResize}
+  onkeydown={(e) => {
+    currentShortcut?.add(e.key);
+  }}
+  onkeyup={(e) => {
+    currentShortcut?.delete(e.key);
+  }}
+/>
 
 <ConflictDialog
   isOpen={moveAlertOpen}
@@ -151,10 +158,10 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
-  class="flex h-full w-full flex-col overflow-hidden"
+  class="flex h-full w-full flex-col overflow-hidden focus:outline-none"
   tabindex="0"
   role="list"
-  onkeydown={onKeydown}
+  onkeydown={fileExplorer.handleKeydown}
   aria-label="File Explorer"
 >
   <div class="border-border bg-background sticky top-0 z-10 flex border-b">
@@ -193,9 +200,14 @@
             <div
               class="hover:bg-muted data-[selected=true]:bg-muted flex cursor-pointer px-2 py-2.5 transition-colors"
               role="listitem"
-              data-selected={fileExplorer.selectedEntryPath === entry.path}
-              onclick={() => fileExplorer.selectEntry(entry)}
-              data-row-index={i}
+              onclick={(e) =>
+                fileExplorer.handleEntryClick(
+                  entry,
+                  i + virtualScroll.visibleStart,
+                  e,
+                )}
+              data-selected={fileExplorer.selection.isSelected(entry.path)}
+              data-row-index={i + virtualScroll.visibleStart}
               ondblclick={() => fileExplorer.openEntry(entry)}
               draggable="true"
               ondragstart={(e) => dragStart(e, entry.path, entry.isDir)}

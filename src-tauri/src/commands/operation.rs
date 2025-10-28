@@ -25,10 +25,6 @@ pub async fn prepare_operation(
     let mut operations: Vec<(PathBuf, PathBuf)> = Vec::new();
     let dest_path = PathBuf::from(dest.clone());
 
-    println!("{src_entries :?}");
-    println!("{dest}");
-    println!("{operation_type:?}");
-
     for src in src_entries.into_iter() {
         if src.is_dir {
             let source_root = PathBuf::from(&src.path);
