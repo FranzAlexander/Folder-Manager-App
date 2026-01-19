@@ -30,7 +30,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
                 path TEXT UNIQUE NOT NULL,
                 last_opened TEXT,
                 last_updated TEXT,
-                opened_since_update BOOLEAN DEFAULT 0,
+                opened_since_update BOOLEAN DEFAULT 0, 
                 user_notes TEXT
             );
             

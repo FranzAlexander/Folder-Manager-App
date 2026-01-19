@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::Utc;
 use rusqlite::{params, params_from_iter, Connection};
 
 use crate::{
@@ -137,4 +138,66 @@ pub fn select_file_status(
     }
 
     Ok(path_to_status)
+}
+
+pub fn update_file_paths(conn: &Connection, path_updates: &[(String, String)]) -> AppResult<()> {
+    if path_updates.is_empty() {
+        return Ok(());
+    }
+
+    let mut stmt = conn.prepare("UPDATE user_file_data SET path = ?1 WHERE path = ?2")?;
+
+    for (new_path, old_path) in path_updates {
+        stmt.execute(params![new_path, old_path])?;
+    }
+
+    Ok(())
+}
+
+pub fn update_file_last_opened(conn: &Connection, path: &str) -> AppResult<()> {
+    let mut stmt = conn.prepare("UPDATE user_file_data SET last_opened = ?1 WHERE path = ?2")?;
+
+    stmt.execute(params![Utc::now().to_rfc3339(), path])?;
+    Ok(())
+}
+
+pub fn copy_file_metadata(conn: &Connection, copies: &[(String, String)]) -> AppResult<()> {
+    if copies.is_empty() {
+        return Ok(());
+    }
+
+    for (src_path, dest_path) in copies {
+        let src_files = select_files(conn, vec![src_path.as_str()])?;
+
+        let Some(src) = src_files.into_iter().next() else {
+            continue;
+        };
+
+        conn.execute(
+            "INSERT INTO user_file_data (path, user_notes) 
+            VALUES (?1, ?2) 
+            ON CONFLICT(path) DO NOTHING",
+            params![dest_path, src.user_notes],
+        )?;
+
+        let dest_id: i64 = conn.query_row(
+            "SELECT id FROM user_file_data WHERE path = ?1",
+            params![dest_path],
+            |row| row.get(0),
+        )?;
+
+        conn.execute(
+            "INSERT INTO file_tags (file_id, tag_id)
+            SELECT ?1 tag_id FROM file_tags WHERE file_id = ?2",
+            params![dest_id, src.id],
+        )?;
+
+        conn.execute(
+            "INSERT INTO file_status (file_id, status_id)
+            SELECT ?1 status_id FROM file_status WHERE file_id = ?2",
+            params![dest_id, src.id],
+        )?;
+    }
+
+    Ok(())
 }

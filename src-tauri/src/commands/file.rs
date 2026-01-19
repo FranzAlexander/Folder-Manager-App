@@ -1,21 +1,15 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
 
 use chrono::{DateTime, Local};
 use rusqlite::Connection;
 use tauri::Manager;
 
 use crate::{
-    db::file_repository::{insert_files, select_file_status, select_file_tags, select_files},
-    error::AppResult,
-    model::{
-        AppConfig, AppState, ConflictResolution, ConflictingEntry, FileOperationEntry,
-        FileSystemEntry, OperationType, SearchEvent, SourceEntry,
+    db::file_repository::{
+        insert_files, select_file_status, select_file_tags, select_files, update_file_last_opened,
     },
+    error::AppResult,
+    model::{AppConfig, AppState, FileSystemEntry, SearchEvent},
 };
 
 #[tauri::command]
@@ -92,7 +86,13 @@ pub fn start_executable(app: tauri::AppHandle, path: String) -> AppResult<()> {
     let result = app.shell().command(&path).spawn();
 
     match result {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            let state = app.state::<Mutex<AppState>>();
+            let app_state = state.lock().unwrap();
+            let conn = &app_state.conn;
+            update_file_last_opened(conn, &path)?;
+            Ok(())
+        }
         Err(tauri_plugin_shell::Error::Io(io_err)) if io_err.raw_os_error() == Some(740) => {
             #[cfg(target_os = "windows")]
             {
@@ -109,8 +109,14 @@ pub fn start_executable(app: tauri::AppHandle, path: String) -> AppResult<()> {
                         AppError::permission_denied(
                             "Failed to launch with elevation. User may have denied UAC prompt.",
                         )
-                    })
-                    .map(|_| ())
+                    })?;
+
+                let state = app.state::<Mutex<AppState>>();
+                let app_state = state.lock().unwrap();
+                let conn = &app_state.conn;
+                update_file_last_opened(conn, &path)?;
+
+                Ok(())
             }
         }
         Err(e) => Err(e.into()),

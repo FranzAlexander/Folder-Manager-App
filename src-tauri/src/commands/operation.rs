@@ -7,6 +7,7 @@ use std::{
 
 use crate::{
     commands::file::traverse_directory,
+    db::file_repository::{copy_file_metadata, update_file_paths},
     error::AppResult,
     model::{
         AppState, ConflictResolution, ConflictingEntry, FileOperationEntry, OperationType,
@@ -96,6 +97,7 @@ pub async fn execute_operation(
     drop(app_state);
 
     let mut unique_dirs: HashSet<PathBuf> = HashSet::new();
+    let mut db_updates: Vec<(String, String)> = Vec::new();
 
     for entry in operations.iter() {
         if let Some(parent_dir) = entry.dest.parent() {
@@ -109,7 +111,7 @@ pub async fn execute_operation(
 
     for file_entry in operations.iter() {
         let src_string = file_entry.src.to_string_lossy().to_string();
-        if let Some(resolution) = conflict_resolutions.get(&src_string) {
+        let dest_used = if let Some(resolution) = conflict_resolutions.get(&src_string) {
             match resolution {
                 ConflictResolution::Skip => {
                     continue;
@@ -119,16 +121,24 @@ pub async fn execute_operation(
                         fs::remove_file(&file_entry.dest)?;
                     }
                     perform_operation(&file_entry.src, &file_entry.dest, op_type)?;
+                    file_entry.dest.clone()
                 }
                 ConflictResolution::Keep => {
                     let new_dest = generate_unique_name(&file_entry.dest)?;
                     perform_operation(&file_entry.src, &new_dest, op_type)?;
+                    new_dest
                 }
             }
         } else {
             perform_operation(&file_entry.src, &file_entry.dest, op_type)?;
-        }
+            file_entry.dest.clone()
+        };
+
+        let dest_string = dest_used.to_string_lossy().to_string();
+        db_updates.push((src_string, dest_string));
     }
+
+    apply_database_updates(&app, op_type, db_updates)?;
 
     Ok(())
 }
@@ -157,6 +167,38 @@ fn perform_operation(src: &Path, dest: &Path, op_type: OperationType) -> AppResu
             Err(e) => Err(e.into()),
         },
     }
+}
+
+fn apply_database_updates(
+    app: &tauri::AppHandle,
+    op_type: OperationType,
+    db_updates: Vec<(String, String)>,
+) -> AppResult<()> {
+    if db_updates.is_empty() {
+        return Ok(());
+    }
+
+    let state = app.state::<Mutex<AppState>>();
+    let app_state = state.lock().unwrap();
+
+    app_state.conn.execute("BEGIN TRANSACTION", [])?;
+
+    match op_type {
+        OperationType::Move => {
+            let path_updates: Vec<(String, String)> = db_updates
+                .into_iter()
+                .map(|(src, dest)| (dest, src))
+                .collect();
+            update_file_paths(&app_state.conn, &path_updates)?;
+        }
+        OperationType::Copy => {
+            copy_file_metadata(&app_state.conn, &db_updates)?;
+        }
+    }
+
+    app_state.conn.execute("COMMIT", [])?;
+
+    Ok(())
 }
 
 fn generate_unique_name(dest: &Path) -> AppResult<PathBuf> {
