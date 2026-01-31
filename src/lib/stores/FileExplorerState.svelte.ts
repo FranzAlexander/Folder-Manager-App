@@ -1,7 +1,13 @@
-import type { ColumnKey, FileSystemEntry, SearchEvent } from "$lib/types";
+import type {
+  ColumnKey,
+  ConflictingEntry,
+  FileSystemEntry,
+  SearchEvent,
+} from "$lib/types";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { SelectionState } from "./SelectionState.svelte";
+import { ClipboardState } from "./ClipboardState.svelte";
 
 export class FileExplorerState {
   rootDir = $state<string>("");
@@ -13,6 +19,7 @@ export class FileExplorerState {
   sortedDirection = $state<"asc" | "desc">("desc");
 
   selection = new SelectionState();
+  clipboard = new ClipboardState();
 
   isSearching = $state(false);
   searchQuery = $state("");
@@ -141,28 +148,6 @@ export class FileExplorerState {
     if (event.button === 4) this.goForward();
   };
 
-  handleKeydown = (event: KeyboardEvent) => {
-    const navigationKeys = [
-      "ArrowUp",
-      "ArrowDown",
-      "Home",
-      "End",
-      "PageUp",
-      "PageDown",
-    ];
-
-    if ((event.ctrlKey || event.metaKey) && event.key === "a") {
-      event.preventDefault();
-      this.selection.selectAll(this.entries);
-      return;
-    }
-
-    if (event.key === "Escape") {
-      this.selection.clearSelection();
-      return;
-    }
-  };
-
   startExecutable = async (path: string) => {
     await invoke("start_executable", { path });
   };
@@ -263,5 +248,37 @@ export class FileExplorerState {
       this.searchTimeout = null;
     }
     this.isSearching = false;
+  }
+
+  async paste(): Promise<ConflictingEntry[] | void> {
+    if (this.clipboard.isEmpty) return;
+
+    const sourceEntries = this.clipboard.entries.map((entry) => ({
+      path: entry.path,
+      isDir: entry.isDir,
+    }));
+
+    const destPath = this.currentDir;
+    const operationType = this.clipboard.isCopy ? "copy" : "move";
+
+    const conflicts: ConflictingEntry[] = await invoke("prepare_operation", {
+      srcEntries: sourceEntries,
+      dest: destPath,
+      operationType,
+    });
+
+    if (conflicts.length !== 0) {
+      return conflicts;
+    }
+
+    await invoke("execute_operation", {
+      conflictResolutions: {},
+    });
+
+    if (this.clipboard.isCut) {
+      this.clipboard.clear();
+    }
+
+    await this.updateEntries(destPath);
   }
 }

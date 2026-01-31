@@ -28,6 +28,11 @@ pub enum AppError {
 
 impl From<rusqlite::Error> for AppError {
     fn from(err: rusqlite::Error) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("🔴 SQL Error: {:?}", err);
+            eprintln!("📍 Backtrace:\n{}", std::backtrace::Backtrace::capture());
+        }
         match err {
             rusqlite::Error::QueryReturnedNoRows => {
                 AppError::NotFound("Resource not found".to_string())

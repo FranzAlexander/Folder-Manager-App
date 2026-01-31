@@ -13,6 +13,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import ConflictDialog from "./ConflictDialog.svelte";
   import { createVirtualScroll } from "$lib/runes/virtualScroll.svelte";
+  import { createKeyboardShortcuts } from "$lib/runes/keyboardShortcuts.svelte";
 
   let {
     fileExplorer,
@@ -40,7 +41,7 @@
   let resizeStartX = $state(0);
   let resizeStartWidth = $state(0);
 
-  const currentShortcut = $state<Set<String>>(new Set());
+  const keyboardShortcuts = createKeyboardShortcuts(()=>fileExplorer);
 
   const virtualScroll = createVirtualScroll<FileSystemEntry>({
     items: () => fileExplorer.entries,
@@ -141,12 +142,7 @@
 <svelte:window
   onmousemove={handleMouseMove}
   onmouseup={stopResize}
-  onkeydown={(e) => {
-    currentShortcut?.add(e.key);
-  }}
-  onkeyup={(e) => {
-    currentShortcut?.delete(e.key);
-  }}
+  onkeydown={keyboardShortcuts.handleKeydown}
 />
 
 <ConflictDialog
@@ -155,13 +151,14 @@
   {conflictEntries}
 />
 
+<!-- onkeydown={fileExplorer.handleKeydown} -->
+
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="flex h-full w-full flex-col overflow-hidden focus:outline-none"
   tabindex="0"
   role="list"
-  onkeydown={fileExplorer.handleKeydown}
   aria-label="File Explorer"
 >
   <div class="border-border bg-background sticky top-0 z-10 flex border-b">
@@ -198,7 +195,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_no_noninteractive_tabindex-->
             <div
-              class="hover:bg-muted data-[selected=true]:bg-muted flex cursor-pointer px-2 py-2.5 transition-colors"
+              class="hover:bg-muted data-[selected=true]:bg-muted flex cursor-pointer px-2 py-2.5 transition-colors data-[clipboard-cut=true]:opacity-50"
               role="listitem"
               onclick={(e) =>
                 fileExplorer.handleEntryClick(
@@ -208,6 +205,7 @@
                 )}
               data-selected={fileExplorer.selection.isSelected(entry.path)}
               data-row-index={i + virtualScroll.visibleStart}
+              data-clipboard-cut={fileExplorer.clipboard.isInClipboard(entry.path) && fileExplorer.clipboard.isCut}
               ondblclick={() => fileExplorer.openEntry(entry)}
               draggable="true"
               ondragstart={(e) => dragStart(e, entry.path, entry.isDir)}
