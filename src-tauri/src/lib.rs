@@ -4,6 +4,8 @@ mod db;
 mod error;
 mod migration;
 mod model;
+mod platform;
+mod utils;
 
 use std::sync::Mutex;
 
@@ -17,9 +19,11 @@ use crate::{
         operation::{cancel_operation, execute_operation, prepare_operation},
         status::{assign_status, create_status, get_statuses},
         tag::{assign_tag, create_tag, get_tags},
+        trash::build_trash_paths,
     },
     db::db_init,
     model::AppState,
+    platform::windows::{get_available_drives, get_current_user_sid},
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,10 +34,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let connection = db_init(app.handle());
+            let current_user_id = get_current_user_sid()?;
+            let trash_paths = build_trash_paths(&current_user_id);
+
             let app_data = AppState {
                 conn: connection,
                 file_op_entries: Vec::new(),
                 operation_type: None,
+                current_user_id,
+                trash_paths,
             };
             app.manage(Mutex::new(app_data));
 

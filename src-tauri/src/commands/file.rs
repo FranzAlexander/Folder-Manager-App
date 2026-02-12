@@ -183,6 +183,11 @@ pub async fn search_files(
     });
 }
 
+#[tauri::command]
+pub async fn delete_files(app: tauri::AppHandle, paths: Vec<String>) -> AppResult<()> {
+    Ok(())
+}
+
 fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileSystemEntry> {
     let name = entry.file_name().into_string().ok()?;
 

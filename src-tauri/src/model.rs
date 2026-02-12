@@ -7,6 +7,8 @@ pub struct AppState {
     pub conn: Connection,
     pub file_op_entries: Vec<FileOperationEntry>,
     pub operation_type: Option<OperationType>,
+    pub current_user_id: String,
+    pub trash_paths: Vec<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

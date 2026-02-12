@@ -28,3 +28,13 @@ rusqlite = { version = "0.37.0", features = ["bundled", "chrono"] }
 dunce = "1.0.5"
 thiserror = "2.0.17"
 tauri-plugin-shell = "2"
+
+[dependencies.windows-sys]
+version = ">=0.59, <=0.61.2"
+features = [    
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Threading",
+    "Win32_System_Memory",
+]
