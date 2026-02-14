@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[tauri::command]
-pub fn get_status(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<Status>> {
+pub fn get_statuses(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<Status>> {
     let app_state = state.lock().unwrap();
     let conn = &app_state.conn;
 

@@ -1,4 +1,4 @@
-import type { FileExplorerState } from "$lib/stores/FileExplorerState.svelte";
+import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
 
 export function createKeyboardShortcuts(
   getFileExplorer: () => FileExplorerState,

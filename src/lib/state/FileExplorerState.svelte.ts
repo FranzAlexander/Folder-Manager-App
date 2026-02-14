@@ -7,7 +7,9 @@ import type {
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { SelectionState } from "./SelectionState.svelte";
+import { statusManager } from "$lib/state/StatusManager.svelte";
 import { ClipboardState } from "./ClipboardState.svelte";
+import { tagManager } from "./TagManager.svelte";
 
 export class FileExplorerState {
   rootDir = $state<string>("");
@@ -23,6 +25,9 @@ export class FileExplorerState {
 
   isSearching = $state(false);
   searchQuery = $state("");
+
+  readonly tags = tagManager;
+  readonly statuses = statusManager;
 
   private currentSearchId = 0;
   private searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -280,5 +285,28 @@ export class FileExplorerState {
     }
 
     await this.updateEntries(destPath);
+  }
+
+  async assignTagToSelected(entryPath: string | undefined, tagName: string) {
+    if (!entryPath) return;
+    const tag = await this.tags.assignTag(entryPath, tagName);
+
+    const entry = this.entries.find((e) => e.path === entryPath);
+    if (entry && !entry.tagIds.includes(tag.id)) {
+      entry.tagIds = [...entry.tagIds, tag.id];
+    }
+  }
+
+  async assignStatusToSelected(
+    entryPath: string | undefined,
+    statusId: number,
+  ) {
+    if (!entryPath) return;
+    const status = await this.statuses.setStatus(entryPath, statusId);
+
+    const entry = this.entries.find((e) => e.path === entryPath);
+    if (entry && !entry.statusIds.includes(status.id)) {
+      entry.statusIds = [...entry.statusIds, status.id];
+    }
   }
 }

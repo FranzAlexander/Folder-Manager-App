@@ -9,7 +9,7 @@
   import { Button, ScrollArea, Separator } from "bits-ui";
   import FileIcon from "./FileIcon.svelte";
   import { formateDate, formatFileSize } from "$lib/utils/formatters";
-  import type { FileExplorerState } from "$lib/stores/FileExplorerState.svelte";
+  import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import ConflictDialog from "./ConflictDialog.svelte";
   import { createVirtualScroll } from "$lib/runes/virtualScroll.svelte";
@@ -41,7 +41,7 @@
   let resizeStartX = $state(0);
   let resizeStartWidth = $state(0);
 
-  const keyboardShortcuts = createKeyboardShortcuts(()=>fileExplorer);
+  const keyboardShortcuts = createKeyboardShortcuts(() => fileExplorer);
 
   const virtualScroll = createVirtualScroll<FileSystemEntry>({
     items: () => fileExplorer.entries,
@@ -205,7 +205,9 @@
                 )}
               data-selected={fileExplorer.selection.isSelected(entry.path)}
               data-row-index={i + virtualScroll.visibleStart}
-              data-clipboard-cut={fileExplorer.clipboard.isInClipboard(entry.path) && fileExplorer.clipboard.isCut}
+              data-clipboard-cut={fileExplorer.clipboard.isInClipboard(
+                entry.path,
+              ) && fileExplorer.clipboard.isCut}
               ondblclick={() => fileExplorer.openEntry(entry)}
               draggable="true"
               ondragstart={(e) => dragStart(e, entry.path, entry.isDir)}
