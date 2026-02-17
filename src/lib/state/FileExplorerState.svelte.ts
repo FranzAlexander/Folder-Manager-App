@@ -10,6 +10,7 @@ import { SelectionState } from "./SelectionState.svelte";
 import { statusManager } from "$lib/state/StatusManager.svelte";
 import { ClipboardState } from "./ClipboardState.svelte";
 import { tagManager } from "./TagManager.svelte";
+import type { newMenu } from "@tauri-apps/api/menu/base";
 
 export class FileExplorerState {
   rootDir = $state<string>("");
@@ -103,9 +104,13 @@ export class FileExplorerState {
 
     this.searchQuery = "";
     this.cancelSearch();
-
-    this.updateEntries(path);
     this.selection.clearSelection();
+
+    if (path == "trash://") {
+      await this.loadTrash();
+    } else {
+      await this.updateEntries(path);
+    }
   };
 
   goBack = async () => {
@@ -308,5 +313,9 @@ export class FileExplorerState {
     if (entry && !entry.statusIds.includes(status.id)) {
       entry.statusIds = [...entry.statusIds, status.id];
     }
+  }
+
+  async loadTrash() {
+    this.entries = await invoke<FileSystemEntry[]>("get_trash_entries");
   }
 }

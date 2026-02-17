@@ -97,6 +97,39 @@ impl From<tauri_plugin_shell::Error> for AppError {
     }
 }
 
+impl From<&str> for AppError {
+    fn from(err: &str) -> Self {
+        AppError::InvalidInput(err.to_string())
+    }
+}
+
+impl From<std::array::TryFromSliceError> for AppError {
+    fn from(err: std::array::TryFromSliceError) -> Self {
+        AppError::InvalidInput(format!(
+            "Failed to parse binary data: {}. The data structure may be corrupted or in an unexpected format.",
+            err
+        ))
+    }
+}
+
+impl From<std::string::FromUtf16Error> for AppError {
+    fn from(err: std::string::FromUtf16Error) -> Self {
+        AppError::InvalidInput(format!(
+            "Failed to decode UTF-16 string: {}. The text data may be corrupted or not valid UTF-16.",
+            err
+        ))
+    }
+}
+
+impl<T> From<std::sync::PoisonError<T>> for AppError {
+    fn from(err: std::sync::PoisonError<T>) -> Self {
+        AppError::DatabaseError(format!(
+            "Mutex poisoned: {}. This indicates a critical internal error.",
+            err
+        ))
+    }
+}
+
 pub type AppResult<T> = Result<T, AppError>;
 
 impl AppError {

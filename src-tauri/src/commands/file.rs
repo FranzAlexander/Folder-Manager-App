@@ -12,6 +12,18 @@ use crate::{
     model::{AppConfig, AppState, FileSystemEntry, SearchEvent},
 };
 
+#[cfg(windows)]
+const WINDOWS_SYSTEM_FOLDERS: &[&str] = &[
+    "$Recycle.Bin",
+    "$RECYCLE.BIN",
+    "RECYCLER",
+    "System Volume Information",
+    "Recovery",
+];
+
+#[cfg(windows)]
+const WINDOWS_SYSTEM_PREFIXES: &[&str] = &["$Windows.~"];
+
 #[tauri::command]
 pub async fn get_root_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let config_path = app
@@ -62,13 +74,7 @@ pub fn read_directory(
     state: tauri::State<Mutex<AppState>>,
     path: String,
 ) -> AppResult<Vec<FileSystemEntry>> {
-    let mut entries: Vec<FileSystemEntry> = fs::read_dir(&path)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let metadata = entry.metadata().ok()?;
-            build_file_entry(entry, metadata)
-        })
-        .collect();
+    let mut entries: Vec<FileSystemEntry> = read_and_process_entries(&path, true)?;
 
     let app_state = state.lock().unwrap();
     let conn = &app_state.conn;
@@ -188,6 +194,30 @@ pub async fn delete_files(app: tauri::AppHandle, paths: Vec<String>) -> AppResul
     Ok(())
 }
 
+pub fn read_and_process_entries(
+    path: &str,
+    filter_system: bool,
+) -> AppResult<Vec<FileSystemEntry>> {
+    let entries: Vec<FileSystemEntry> = fs::read_dir(path)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+
+            if filter_system {
+                let file_name = entry.file_name();
+                let name = file_name.to_str()?;
+                if is_system_folder(name) {
+                    return None;
+                }
+            }
+
+            let metadata = entry.metadata().ok()?;
+            build_file_entry(entry, metadata)
+        })
+        .collect();
+
+    return Ok(entries);
+}
+
 fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileSystemEntry> {
     let name = entry.file_name().into_string().ok()?;
 
@@ -219,11 +249,24 @@ fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileS
             None
         },
         path,
+        original_path: None,
         date_modified: date_modified.to_rfc3339(),
         file_type,
         tag_ids: Vec::new(),
         status_ids: Vec::new(),
     })
+}
+
+fn is_system_folder(name: &str) -> bool {
+    #[cfg(windows)]
+    {
+        return WINDOWS_SYSTEM_FOLDERS
+            .iter()
+            .any(|&folder| name.eq_ignore_ascii_case(folder))
+            || WINDOWS_SYSTEM_PREFIXES
+                .iter()
+                .any(|&prefix| name.to_ascii_lowercase().starts_with(prefix));
+    }
 }
 
 fn ensure_files_in_database(conn: &Connection, entries: &[FileSystemEntry]) -> AppResult<()> {

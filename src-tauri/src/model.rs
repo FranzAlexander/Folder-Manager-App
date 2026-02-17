@@ -8,7 +8,6 @@ pub struct AppState {
     pub file_op_entries: Vec<FileOperationEntry>,
     pub operation_type: Option<OperationType>,
     pub current_user_id: String,
-    pub trash_paths: Vec<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -44,6 +43,7 @@ pub struct FileSystemEntry {
     pub is_file: bool,
     pub size: Option<u64>,
     pub path: String,
+    pub original_path: Option<String>,
     pub date_modified: String,
     pub file_type: String,
     pub tag_ids: Vec<i64>,
