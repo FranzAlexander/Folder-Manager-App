@@ -76,7 +76,7 @@ pub fn read_directory(
 ) -> AppResult<Vec<FileSystemEntry>> {
     let mut entries: Vec<FileSystemEntry> = read_and_process_entries(&path, true)?;
 
-    let app_state = state.lock().unwrap();
+    let app_state = state.lock()?;
     let conn = &app_state.conn;
 
     ensure_files_in_database(conn, &entries)?;
@@ -92,41 +92,30 @@ pub fn start_executable(app: tauri::AppHandle, path: String) -> AppResult<()> {
     let result = app.shell().command(&path).spawn();
 
     match result {
-        Ok(_) => {
-            let state = app.state::<Mutex<AppState>>();
-            let app_state = state.lock().unwrap();
-            let conn = &app_state.conn;
-            update_file_last_opened(conn, &path)?;
-            Ok(())
-        }
+        Ok(_) => {}
         Err(tauri_plugin_shell::Error::Io(io_err)) if io_err.raw_os_error() == Some(740) => {
             #[cfg(target_os = "windows")]
-            {
-                app.shell()
-                    .command("powershell")
-                    .args([
-                        "-Command",
-                        &format!("Start-Process -FilePath '{}' -Verb RunAs", path),
-                    ])
-                    .spawn()
-                    .map_err(|_| {
-                        use crate::error::AppError;
-
-                        AppError::permission_denied(
-                            "Failed to launch with elevation. User may have denied UAC prompt.",
-                        )
-                    })?;
-
-                let state = app.state::<Mutex<AppState>>();
-                let app_state = state.lock().unwrap();
-                let conn = &app_state.conn;
-                update_file_last_opened(conn, &path)?;
-
-                Ok(())
-            }
+            app.shell()
+                .command("powershell")
+                .args([
+                    "-Command",
+                    &format!("Start-Process -FilePath '{}' -Verb RunAs", path),
+                ])
+                .spawn()
+                .map_err(|_| {
+                    use crate::error::AppError;
+                    AppError::permission_denied(
+                        "Failed to launch with elevation. User may have denied UAC prompt.",
+                    )
+                })?;
         }
-        Err(e) => Err(e.into()),
+        Err(e) => return Err(e.into()),
     }
+
+    let state = app.state::<Mutex<AppState>>();
+    let app_state = state.lock()?;
+    update_file_last_opened(&app_state.conn, &path)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -139,6 +128,19 @@ pub async fn search_files(
     let mut found_any = false;
     let mut matching_entries: Vec<FileSystemEntry> = Vec::new();
     let name_lower = name.to_lowercase();
+
+    let flush = |entries: &mut Vec<FileSystemEntry>| {
+        if entries.is_empty() {
+            return;
+        }
+        let state = app.state::<Mutex<AppState>>();
+        if let Ok(app_state) = state.lock() {
+            update_with_tags_and_status(&app_state.conn, entries).ok();
+        }
+        let _ = on_event.send(SearchEvent::Searching {
+            entries: entries.drain(..).collect(),
+        });
+    };
 
     let _ = traverse_directory(PathBuf::from(path), |entry, metadata| {
         let file_name_os = entry.file_name();
@@ -156,15 +158,7 @@ pub async fn search_files(
 
         if matching_entries.len() >= 50 {
             found_any = true;
-            let state = app.state::<Mutex<AppState>>();
-            let app_state = state.lock().unwrap();
-            update_with_tags_and_status(&app_state.conn, &mut matching_entries).ok();
-            drop(app_state);
-
-            let _ = on_event.send(SearchEvent::Searching {
-                entries: matching_entries.clone(),
-            });
-            matching_entries.clear();
+            flush(&mut matching_entries);
         }
 
         Ok(())
@@ -172,14 +166,7 @@ pub async fn search_files(
 
     if !matching_entries.is_empty() {
         found_any = true;
-        let state = app.state::<Mutex<AppState>>();
-        let app_state = state.lock().unwrap();
-        update_with_tags_and_status(&app_state.conn, &mut matching_entries).ok();
-        drop(app_state);
-
-        let _ = on_event.send(SearchEvent::Searching {
-            entries: matching_entries,
-        });
+        flush(&mut matching_entries);
     }
 
     let _ = on_event.send(if found_any {
@@ -187,11 +174,6 @@ pub async fn search_files(
     } else {
         SearchEvent::NotFound
     });
-}
-
-#[tauri::command]
-pub async fn delete_files(app: tauri::AppHandle, paths: Vec<String>) -> AppResult<()> {
-    Ok(())
 }
 
 pub fn read_and_process_entries(
@@ -215,7 +197,7 @@ pub fn read_and_process_entries(
         })
         .collect();
 
-    return Ok(entries);
+    Ok(entries)
 }
 
 fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileSystemEntry> {
@@ -229,7 +211,7 @@ fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileS
     let date_modified: DateTime<Local> = metadata.modified().ok()?.into();
 
     let file_type = if metadata.is_dir() {
-        String::from("DIR")
+        String::from("Folder")
     } else {
         entry
             .path()
@@ -243,11 +225,7 @@ fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileS
         name,
         is_dir: metadata.is_dir(),
         is_file: metadata.is_file(),
-        size: if metadata.is_file() {
-            Some(metadata.len())
-        } else {
-            None
-        },
+        size: metadata.is_file().then(|| metadata.len()),
         path,
         original_path: None,
         date_modified: date_modified.to_rfc3339(),

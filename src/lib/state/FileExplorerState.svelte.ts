@@ -10,7 +10,6 @@ import { SelectionState } from "./SelectionState.svelte";
 import { statusManager } from "$lib/state/StatusManager.svelte";
 import { ClipboardState } from "./ClipboardState.svelte";
 import { tagManager } from "./TagManager.svelte";
-import type { newMenu } from "@tauri-apps/api/menu/base";
 
 export class FileExplorerState {
   rootDir = $state<string>("");
@@ -122,7 +121,7 @@ export class FileExplorerState {
 
       this.selection.clearSelection();
 
-      this.updateEntries(this.currentDir);
+      await this.updateEntries(this.currentDir);
     }
   };
 
@@ -135,7 +134,7 @@ export class FileExplorerState {
 
       this.selection.clearSelection();
 
-      this.updateEntries(this.currentDir);
+      await this.updateEntries(this.currentDir);
     }
   };
 

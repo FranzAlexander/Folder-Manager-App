@@ -29,7 +29,7 @@ fn build_trash_paths(user_id: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-fn parse_recycle_bin_info(i_file_path: &PathBuf) -> AppResult<(String, SystemTime, u64)> {
+fn parse_recycle_bin_info(i_file_path: &std::path::Path) -> AppResult<(String, SystemTime, u64)> {
     // $I files contain:
     // - Bytes 0-7: Header
     // - Bytes 8-15: Original file size
@@ -75,9 +75,7 @@ fn decode_utf16_le(bytes: &[u8]) -> AppResult<String> {
 
 #[tauri::command]
 pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<FileSystemEntry>> {
-    let app_state = state
-        .lock()
-        .map_err(|_| "Failed to acquire lock on app state")?;
+    let app_state = state.lock()?;
 
     let current_user_id = &app_state.current_user_id;
     let trash_paths = build_trash_paths(current_user_id);
@@ -107,6 +105,12 @@ pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<
                     continue;
                 };
 
+                // The $R counterpart holds the actual deleted content; use it to
+                // determine whether the original item was a directory or a file.
+                let r_file_name = file_name.replacen("$I", "$R", 1);
+                let r_path = path.with_file_name(&r_file_name);
+                let is_dir = r_path.is_dir();
+
                 let path_buf = PathBuf::from(&original_path);
 
                 let name = path_buf
@@ -117,18 +121,22 @@ pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<
 
                 let date_modified: DateTime<Local> = deletion_date.into();
 
-                let file_type = path_buf
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|s| s.to_uppercase())
-                    .unwrap_or_else(|| String::from("File"));
+                let file_type = if is_dir {
+                    String::from("Folder")
+                } else {
+                    path_buf
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|s| s.to_uppercase())
+                        .unwrap_or_else(|| String::from("File"))
+                };
 
                 let unique_path = path.to_string_lossy().to_string();
 
                 all_entries.push(FileSystemEntry {
                     name,
-                    is_dir: false,
-                    is_file: true,
+                    is_dir,
+                    is_file: !is_dir,
                     size: Some(original_size),
                     path: unique_path,
                     original_path: Some(original_path),
@@ -142,6 +150,55 @@ pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<
     }
 
     Ok(all_entries)
+}
+
+fn i_path_to_r_path(i_path: &std::path::Path) -> AppResult<PathBuf> {
+    let file_name = i_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| AppError::InvalidInput("Invalid $I file path".into()))?;
+    let r_file_name = file_name.replacen("$I", "$R", 1);
+    Ok(i_path.with_file_name(r_file_name))
+}
+
+#[tauri::command]
+pub fn restore_trash_entry(i_file_path: String) -> AppResult<()> {
+    let i_path = PathBuf::from(&i_file_path);
+    let (original_path, _, _) = parse_recycle_bin_info(&i_path)?;
+    let r_path = i_path_to_r_path(&i_path)?;
+
+    let dest_path = PathBuf::from(&original_path);
+
+    if let Some(parent) = dest_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    if dest_path.exists() {
+        return Err(AppError::AlreadyExists(original_path));
+    }
+
+    fs::rename(&r_path, &dest_path)?;
+    fs::remove_file(&i_path)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_trash_entry(i_file_path: String) -> AppResult<()> {
+    let i_path = PathBuf::from(&i_file_path);
+    let r_path = i_path_to_r_path(&i_path)?;
+
+    if r_path.is_dir() {
+        fs::remove_dir_all(&r_path)?;
+    } else if r_path.exists() {
+        fs::remove_file(&r_path)?;
+    }
+
+    fs::remove_file(&i_path)?;
+
+    Ok(())
 }
 
 fn filetime_to_system_time(filetime: u64) -> Option<SystemTime> {
