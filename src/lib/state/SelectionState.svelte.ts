@@ -38,16 +38,9 @@ export class SelectionState {
   }
 
   selectAll(entries: FileSystemEntry[]) {
-    for (const entry of entries) {
-      this.selectedPaths.add(entry.path);
-    }
+    this.selectedPaths = new SvelteSet(entries.map((e) => e.path));
     this.anchorIndex = 0;
-
     this.lastSelectedIndex = entries.length - 1;
-  }
-
-  getSelectedPaths(): string[] {
-    return Array.from(this.selectedPaths);
   }
 
   isSelected(path: string): boolean {

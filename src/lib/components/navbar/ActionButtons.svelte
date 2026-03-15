@@ -25,13 +25,10 @@
   }
 
   async function handleAssignStatus(statusId: number) {
-    const status = statuses.resolveStatus(statusId);
-    if (status) {
-      await fileExplorer.assignStatusToSelected(
-        fileExplorer.selectedEntryPath,
-        statusId,
-      );
-    }
+    await fileExplorer.assignStatusToSelected(
+      fileExplorer.selectedEntryPath,
+      statusId,
+    );
   }
 </script>
 

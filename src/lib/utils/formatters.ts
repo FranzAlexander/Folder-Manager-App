@@ -1,4 +1,4 @@
-export function formateDate(date: string): string {
+export function formatDate(date: string): string {
   return new Intl.DateTimeFormat("en-AU", {
     dateStyle: "short",
     timeStyle: "short",

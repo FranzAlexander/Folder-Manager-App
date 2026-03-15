@@ -2,8 +2,9 @@ import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
 
 export function createKeyboardShortcuts(
   getFileExplorer: () => FileExplorerState,
+  onPaste: () => void,
 ) {
-  function handleKeydown(event: KeyboardEvent) {
+  async function handleKeydown(event: KeyboardEvent) {
     const fileExplorer = getFileExplorer();
     const ctrl = event.ctrlKey || event.metaKey;
 
@@ -15,33 +16,23 @@ export function createKeyboardShortcuts(
 
     if (ctrl && event.key === "c") {
       event.preventDefault();
-
       const selectedEntries = fileExplorer.selectedEntries;
-
-      if (selectedEntries.length === 0) {
-        return;
-      }
-
+      if (selectedEntries.length === 0) return;
       fileExplorer.clipboard.copy(selectedEntries, fileExplorer.currentDir);
       return;
     }
 
     if (ctrl && event.key === "x") {
       event.preventDefault();
-
       const selectedEntries = fileExplorer.selectedEntries;
-
-      if (selectedEntries.length === 0) {
-        return;
-      }
-
+      if (selectedEntries.length === 0) return;
       fileExplorer.clipboard.cut(selectedEntries, fileExplorer.currentDir);
       return;
     }
 
     if (ctrl && event.key === "v") {
       event.preventDefault();
-      fileExplorer.paste();
+      onPaste();
       return;
     }
 
@@ -50,5 +41,6 @@ export function createKeyboardShortcuts(
       return;
     }
   }
+
   return { handleKeydown };
 }

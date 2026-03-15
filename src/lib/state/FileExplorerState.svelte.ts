@@ -10,6 +10,7 @@ import { SelectionState } from "./SelectionState.svelte";
 import { statusManager } from "$lib/state/StatusManager.svelte";
 import { ClipboardState } from "./ClipboardState.svelte";
 import { tagManager } from "./TagManager.svelte";
+import { TrashState } from "./TrashState.svelte";
 
 export class FileExplorerState {
   rootDir = $state<string>("");
@@ -22,6 +23,9 @@ export class FileExplorerState {
 
   selection = new SelectionState();
   clipboard = new ClipboardState();
+  trash = new TrashState((entries) => {
+    this.entries = entries;
+  });
 
   isSearching = $state(false);
   searchQuery = $state("");
@@ -106,7 +110,7 @@ export class FileExplorerState {
     this.selection.clearSelection();
 
     if (path == "trash://") {
-      await this.loadTrash();
+      await this.trash.load();
     } else {
       await this.updateEntries(path);
     }
@@ -257,6 +261,22 @@ export class FileExplorerState {
       this.searchTimeout = null;
     }
     this.isSearching = false;
+  }
+
+  async restoreSelected() {
+    await Promise.all(
+      this.selectedEntries.map((e) => invoke("restore_trash_entry", { iFilePath: e.path })),
+    );
+    this.selection.clearSelection();
+    await this.trash.load();
+  }
+
+  async deleteSelectedPermanently() {
+    await Promise.all(
+      this.selectedEntries.map((e) => invoke("delete_trash_entry", { iFilePath: e.path })),
+    );
+    this.selection.clearSelection();
+    await this.trash.load();
   }
 
   async paste(): Promise<ConflictingEntry[] | void> {

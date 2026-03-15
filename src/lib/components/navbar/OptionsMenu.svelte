@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu } from "bits-ui";
-  import { EllipsisVertical, Folder, Settings, Info } from "@lucide/svelte";
+  import { EllipsisVertical, Folder } from "@lucide/svelte";
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
 
   let { fileExplorer }: { fileExplorer: FileExplorerState } = $props();

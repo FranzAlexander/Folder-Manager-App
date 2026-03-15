@@ -10,28 +10,23 @@ export function createVirtualScroll<T>(options: {
 
   let scrollTop = $state(0);
 
+  const items = $derived(options.items());
+
   const visibleStart = $derived(
     Math.max(0, Math.floor(scrollTop / itemHeight) - overscan),
   );
 
   const visibleEnd = $derived(
     Math.min(
-      options.items().length,
+      items.length,
       Math.ceil((scrollTop + containerHeight) / itemHeight) + overscan,
     ),
   );
 
-  const visibleItems = $derived(
-    options.items().slice(visibleStart, visibleEnd),
-  );
+  const visibleItems = $derived(items.slice(visibleStart, visibleEnd));
 
-  const totalHeight = $derived(options.items().length * itemHeight);
+  const totalHeight = $derived(items.length * itemHeight);
   const offsetY = $derived(visibleStart * itemHeight);
-
-  function handleScroll(e: Event) {
-    const target = e.target as HTMLElement;
-    scrollTop = target.scrollTop;
-  }
 
   return {
     get scrollTop() {
@@ -55,6 +50,5 @@ export function createVirtualScroll<T>(options: {
     get offsetY() {
       return offsetY;
     },
-    handleScroll,
   };
 }

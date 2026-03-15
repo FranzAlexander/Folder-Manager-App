@@ -109,6 +109,11 @@ pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<
                 // determine whether the original item was a directory or a file.
                 let r_file_name = file_name.replacen("$I", "$R", 1);
                 let r_path = path.with_file_name(&r_file_name);
+
+                if !r_path.exists() {
+                    continue;
+                }
+
                 let is_dir = r_path.is_dir();
 
                 let path_buf = PathBuf::from(&original_path);

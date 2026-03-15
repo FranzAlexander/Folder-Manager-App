@@ -4,6 +4,7 @@ export interface FileSystemEntry {
   isFile: boolean;
   size: number | null;
   path: string;
+  originalPath: string | null;
   dateModified: string;
   fileType: string;
   tagIds: number[];
@@ -47,5 +48,3 @@ export type SearchEvent =
     };
 
 export type ConflictResolution = "skip" | "keep" | "replace";
-
-export type OperationType = "Move" | "Copy";

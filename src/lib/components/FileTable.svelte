@@ -8,10 +8,11 @@
   } from "$lib/types";
   import { Button, ScrollArea, Separator } from "bits-ui";
   import FileIcon from "./FileIcon.svelte";
-  import { formateDate, formatFileSize } from "$lib/utils/formatters";
+  import { formatDate, formatFileSize } from "$lib/utils/formatters";
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import ConflictDialog from "./ConflictDialog.svelte";
+  import ContextMenu from "./ContextMenu.svelte";
   import { createVirtualScroll } from "$lib/runes/virtualScroll.svelte";
   import { createKeyboardShortcuts } from "$lib/runes/keyboardShortcuts.svelte";
 
@@ -37,11 +38,35 @@
   let moveAlertOpen = $state(false);
   let conflictEntries = $state<ConflictingEntry[]>([]);
 
+  let contextMenuOpen = $state(false);
+  let contextMenuX = $state(0);
+  let contextMenuY = $state(0);
+  let contextMenuEntry = $state<FileSystemEntry | null>(null);
+
   let resizingColumn = $state<ColumnKey | null>(null);
   let resizeStartX = $state(0);
   let resizeStartWidth = $state(0);
 
-  const keyboardShortcuts = createKeyboardShortcuts(() => fileExplorer);
+  async function handlePaste() {
+    const conflicts = await fileExplorer.paste();
+    if (conflicts && conflicts.length > 0) {
+      conflictEntries = conflicts;
+      moveAlertOpen = true;
+    }
+  }
+
+  const keyboardShortcuts = createKeyboardShortcuts(() => fileExplorer, handlePaste);
+
+  function handleContextMenu(e: MouseEvent, entry: FileSystemEntry, index: number) {
+    e.preventDefault();
+    if (!fileExplorer.selection.isSelected(entry.path)) {
+      fileExplorer.selection.selectSingle(entry, index);
+    }
+    contextMenuX = e.clientX;
+    contextMenuY = e.clientY;
+    contextMenuEntry = entry;
+    contextMenuOpen = true;
+  }
 
   const virtualScroll = createVirtualScroll<FileSystemEntry>({
     items: () => fileExplorer.entries,
@@ -129,7 +154,7 @@
       await invoke("execute_operation", {
         conflictResolutions: {},
       });
-      0;
+      await fileExplorer.updateEntries(fileExplorer.currentDir);
     }
   }
 
@@ -146,10 +171,22 @@
 />
 
 <ConflictDialog
-  isOpen={moveAlertOpen}
+  bind:isOpen={moveAlertOpen}
   onCancel={cancelOperation}
+  onResolve={async () => fileExplorer.updateEntries(fileExplorer.currentDir)}
   {conflictEntries}
 />
+
+{#if contextMenuOpen && contextMenuEntry}
+  <ContextMenu
+    x={contextMenuX}
+    y={contextMenuY}
+    entry={contextMenuEntry}
+    {fileExplorer}
+    onClose={() => (contextMenuOpen = false)}
+    onPaste={handlePaste}
+  />
+{/if}
 
 <!-- onkeydown={fileExplorer.handleKeydown} -->
 
@@ -161,20 +198,37 @@
   role="list"
   aria-label="File Explorer"
 >
-  <div class="border-border bg-background sticky top-0 z-10 flex border-b">
+  <!-- Header -->
+  <div class="border-border/60 bg-background sticky top-0 z-10 flex border-b px-2">
     {#each columns as column (column.key)}
       <Button.Root
         data-column-sorted={fileExplorer.sortedColumn === column.key}
-        class="data-[column-sorted=true]:bg-muted/50 hover:bg-muted relative flex shrink-0 cursor-pointer items-center px-4 py-3 text-sm font-semibold select-none"
-        onclick={() => {
-          fileExplorer.sortColumns(column.key);
-        }}
+        class="data-[column-sorted=true]:text-primary relative flex shrink-0 cursor-pointer items-center gap-1 px-3 py-2.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase transition-colors select-none hover:text-primary"
+        onclick={() => fileExplorer.sortColumns(column.key)}
         style="width: {column.width}px;"
       >
         <span>{column.label}</span>
+        {#if fileExplorer.sortedColumn === column.key}
+          <svg
+            class="size-3 shrink-0"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            {#if fileExplorer.sortedDirection === "asc"}
+              <path d="m18 15-6-6-6 6" />
+            {:else}
+              <path d="m6 9 6 6 6-6" />
+            {/if}
+          </svg>
+        {/if}
         <Separator.Root
           orientation="vertical"
-          class="bg-border hover:bg-muted active:bg-muted-foreground absolute top-0 right-0 h-full w-0.5 cursor-col-resize select-none"
+          class="bg-border/60 hover:bg-accent active:bg-accent absolute top-2 right-0 h-[calc(100%-16px)] w-px cursor-col-resize rounded-full opacity-0 transition-all hover:opacity-100 select-none"
           onmousedown={(e) => startResize(column.key, e)}
           role="separator"
           aria-orientation="vertical"
@@ -183,19 +237,21 @@
       </Button.Root>
     {/each}
   </div>
+
+  <!-- Rows -->
   <ScrollArea.Root class="flex-1 overflow-hidden" type="hover">
     <ScrollArea.Viewport
-      class="h-full w-full scroll-smooth"
+      class="h-full w-full"
       onscroll={(e) => (virtualScroll.scrollTop = e.currentTarget.scrollTop)}
     >
-      <div class="relative" style="height: {virtualScroll.totalHeight}px">
+      <div class="relative py-1" style="height: {virtualScroll.totalHeight}px">
         <div style="transform: translateY({virtualScroll.offsetY}px)">
           {#each virtualScroll.visibleItems as entry, i (entry.path)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_no_noninteractive_tabindex-->
             <div
-              class="hover:bg-muted data-[selected=true]:bg-muted flex cursor-pointer px-2 py-2.5 transition-colors data-[clipboard-cut=true]:opacity-50"
+              class="hover:bg-muted/50 data-[selected=true]:bg-accent/20 mx-2 flex cursor-pointer rounded-md transition-colors duration-100 data-[clipboard-cut=true]:opacity-40"
               role="listitem"
               onclick={(e) =>
                 fileExplorer.handleEntryClick(
@@ -209,57 +265,69 @@
                 entry.path,
               ) && fileExplorer.clipboard.isCut}
               ondblclick={() => fileExplorer.openEntry(entry)}
+              oncontextmenu={(e) => handleContextMenu(e, entry, i + virtualScroll.visibleStart)}
               draggable="true"
               ondragstart={(e) => dragStart(e, entry.path, entry.isDir)}
               ondrop={(e) => dragDrop(e, entry.path)}
               ondragover={(e) => dragOver(e)}
             >
+              <!-- Name -->
               <div
-                class="flex shrink-0 items-center text-sm"
+                class="flex shrink-0 items-center px-3 py-1.5"
                 style="width: {getColumnWidth('name')}px;"
               >
-                <div class="flex items-center gap-2 overflow-hidden">
-                  <FileIcon file={entry} size={24} />
-                  <span class="truncate">{entry.name}</span>
+                <div class="flex min-w-0 items-center gap-2">
+                  <FileIcon file={entry} size={18} />
+                  <span class="text-primary truncate text-sm font-medium">{entry.name}</span>
                 </div>
               </div>
+
+              <!-- Date Modified -->
               <div
-                class="flex shrink-0 items-center text-sm"
+                class="flex shrink-0 items-center px-3 py-1.5 text-sm text-muted-foreground"
                 style="width: {getColumnWidth('dateModified')}px;"
               >
-                {formateDate(entry.dateModified)}
+                {formatDate(entry.dateModified)}
               </div>
+
+              <!-- Type -->
               <div
-                class="flex shrink-0 items-center text-sm"
+                class="flex shrink-0 items-center px-3 py-1.5 text-sm text-muted-foreground"
                 style="width: {getColumnWidth('fileType')}px;"
               >
                 {entry.fileType}
               </div>
+
+              <!-- Size -->
               <div
-                class="flex shrink-0 items-center text-sm"
+                class="flex shrink-0 items-center px-3 py-1.5 text-sm tabular-nums text-muted-foreground"
                 style="width: {getColumnWidth('size')}px;"
               >
                 {formatFileSize(entry.size)}
               </div>
+
+              <!-- Tags -->
               <div
-                class="flex shrink-0 items-center gap-1 text-sm"
+                class="flex shrink-0 items-center gap-1 px-3 py-1.5"
                 style="width: {getColumnWidth('tags')}px;"
               >
                 {#each entry.tagIds as tagId (tagId)}
                   <span
-                    class="bg-muted text-primary border-border inline-flex w-fit shrink-0 items-center justify-center rounded-md border px-2 py-0.5 text-sm font-medium"
+                    class="bg-accent/15 text-accent inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium"
                   >
                     {tags.find((t) => t.id === tagId)?.name}
                   </span>
                 {/each}
               </div>
+
+              <!-- Status -->
               <div
-                class="flex shrink-0 items-center text-sm"
+                class="flex shrink-0 items-center gap-1 px-3 py-1.5"
                 style="width: {getColumnWidth('status')}px;"
               >
                 {#each entry.statusIds as statusId (statusId)}
                   <span
-                    class="bg-muted text-primary border-border inline-flex w-fit shrink-0 items-center justify-center rounded-md border px-2 py-0.5 text-sm font-medium"
+                    class="bg-muted/80 text-muted-foreground inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium"
                   >
                     {statusList.find((s) => s.id === statusId)?.name}
                   </span>
@@ -272,10 +340,10 @@
     </ScrollArea.Viewport>
     <ScrollArea.Scrollbar
       orientation="vertical"
-      class="hover:bg-muted flex h-full w-2.5 touch-none border-l border-l-transparent p-px transition-colors select-none"
+      class="flex h-full w-1.5 touch-none p-px transition-opacity select-none"
     >
       <ScrollArea.Thumb
-        class="bg-border/60 hover:bg-border relative flex-1 rounded-full transition-colors"
+        class="bg-border/50 hover:bg-border relative flex-1 rounded-full transition-colors"
       />
     </ScrollArea.Scrollbar>
   </ScrollArea.Root>
