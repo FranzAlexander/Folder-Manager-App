@@ -19,7 +19,7 @@ use crate::{
         operation::{cancel_operation, execute_operation, prepare_operation},
         status::{assign_status, create_status, get_statuses},
         tag::{assign_tag, create_tag, get_tags},
-        trash::{delete_trash_entry, get_trash_entries, restore_trash_entry},
+        trash::{delete_permanently, delete_trash_entry, get_trash_entries, move_to_trash, restore_trash_entry},
     },
     db::db_init,
     model::AppState,
@@ -63,7 +63,9 @@ pub fn run() {
             cancel_operation,
             get_trash_entries,
             restore_trash_entry,
-            delete_trash_entry
+            delete_trash_entry,
+            move_to_trash,
+            delete_permanently
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

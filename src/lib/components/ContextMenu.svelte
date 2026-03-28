@@ -2,6 +2,7 @@
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
   import type { FileSystemEntry } from "$lib/types";
   import { Copy, Scissors, Clipboard, FolderOpen, RotateCcw, Trash2 } from "@lucide/svelte";
+  import { confirm } from "@tauri-apps/plugin-dialog";
 
   let {
     x,
@@ -61,6 +62,15 @@
 
   async function handleDeletePermanently() {
     await fileExplorer.trash.deletePermanently(entry.path);
+    onClose();
+  }
+
+  async function handleMoveToTrash() {
+    await fileExplorer.trash.moveToTrash(
+      fileExplorer.selectedEntries.map((e) => e.path),
+    );
+    await fileExplorer.updateEntries(fileExplorer.currentDir);
+    fileExplorer.selection.clearSelection();
     onClose();
   }
 </script>
@@ -139,6 +149,18 @@
       <Clipboard class="text-muted-foreground size-4 shrink-0" />
       <span class="flex-1 text-left">Paste</span>
       <span class="text-muted-foreground text-xs">Ctrl+V</span>
+    </button>
+
+    <div class="bg-border/60 my-1 h-px" role="separator"></div>
+
+    <button
+      class="hover:bg-destructive/10 text-destructive flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm"
+      onclick={handleMoveToTrash}
+      role="menuitem"
+    >
+      <Trash2 class="size-4 shrink-0" />
+      <span class="flex-1 text-left">Move to Trash</span>
+      <span class="text-muted-foreground text-xs">Del</span>
     </button>
   {/if}
 </div>

@@ -24,6 +24,10 @@ export class TrashState {
     await this.load();
   }
 
+  async moveToTrash(paths: string[]) {
+    await invoke("move_to_trash", { paths });
+  }
+
   async deletePermanently(iFilePath: string) {
     await invoke("delete_trash_entry", { iFilePath });
     await this.load();
