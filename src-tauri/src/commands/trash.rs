@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 use std::{
     ffi::OsStr,
     fs,
@@ -9,8 +11,8 @@ use std::{
 };
 
 use chrono::{DateTime, Local};
+use rand::Rng;
 
-#[cfg(windows)]
 use crate::platform::windows::get_available_drives;
 use crate::{
     error::{AppError, AppResult},
@@ -18,7 +20,6 @@ use crate::{
 };
 
 fn build_trash_paths(user_id: &str) -> Vec<PathBuf> {
-    #[cfg(windows)]
     get_available_drives()
         .iter()
         .map(|drive| {
@@ -227,7 +228,7 @@ pub fn delete_trash_entry(i_file_path: String) -> AppResult<()> {
 
     if r_path.is_dir() {
         fs::remove_dir_all(&r_path)?;
-    } else if r_path.exists() {
+    } else {
         fs::remove_file(&r_path)?;
     }
 
@@ -271,36 +272,33 @@ fn write_recycle_bin_info(i_path: &std::path::Path, original_path: &str, file_si
 fn generate_unique_id(recycle_bin_path: &std::path::Path) -> AppResult<String> {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-    let seed = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
+    // Collect existing names once to avoid repeated directory reads per attempt.
+    let existing: std::collections::HashSet<String> = fs::read_dir(recycle_bin_path)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_uppercase())
+                .collect()
+        })
+        .unwrap_or_default();
 
-    let mut n = seed;
+    let mut rng = rand::thread_rng();
+
     for _ in 0..10_000 {
-        let mut id = String::with_capacity(6);
-        let mut v = n;
-        for _ in 0..6 {
-            id.push(CHARS[(v % CHARS.len() as u64) as usize] as char);
-            v /= CHARS.len() as u64;
-        }
+        let id: String = (0..6)
+            .map(|_| CHARS[rng.gen_range(0..CHARS.len())] as char)
+            .collect();
 
         let i_prefix = format!("$I{}", id);
         let r_prefix = format!("$R{}", id);
 
-        let taken = fs::read_dir(recycle_bin_path)
-            .map(|entries| {
-                entries.filter_map(|e| e.ok()).any(|e| {
-                    let name = e.file_name().to_string_lossy().to_uppercase();
-                    name.starts_with(&i_prefix) || name.starts_with(&r_prefix)
-                })
-            })
-            .unwrap_or(false);
+        let taken = existing
+            .iter()
+            .any(|name| name.starts_with(&i_prefix) || name.starts_with(&r_prefix));
 
         if !taken {
             return Ok(id);
         }
-        n = n.wrapping_add(1);
     }
 
     Err(AppError::FileSystemError(
@@ -332,10 +330,13 @@ pub fn move_to_trash(paths: Vec<String>, state: tauri::State<Mutex<AppState>>) -
         let src = PathBuf::from(path_str);
 
         // "C:" → "C:\$Recycle.Bin\{SID}"
-        let drive = path_str
-            .get(..2)
+        let drive = src
+            .components()
+            .next()
             .ok_or_else(|| AppError::InvalidInput("Path has no drive component".into()))?;
-        let recycle_bin = PathBuf::from(format!("{}\\$Recycle.Bin\\{}", drive, user_sid));
+        let recycle_bin = PathBuf::from(drive.as_os_str())
+            .join("$Recycle.Bin")
+            .join(&user_sid);
 
         if !recycle_bin.exists() {
             fs::create_dir_all(&recycle_bin)?;
