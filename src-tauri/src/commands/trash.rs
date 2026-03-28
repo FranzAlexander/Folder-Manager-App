@@ -1,6 +1,8 @@
 use std::{
+    ffi::OsStr,
     fs,
     io::Read,
+    os::windows::ffi::OsStrExt,
     path::PathBuf,
     sync::Mutex,
     time::{Duration, SystemTime},
@@ -202,6 +204,133 @@ pub fn delete_trash_entry(i_file_path: String) -> AppResult<()> {
     }
 
     fs::remove_file(&i_path)?;
+
+    Ok(())
+}
+
+fn system_time_to_filetime(time: SystemTime) -> u64 {
+    const UNIX_TO_FILETIME_SECONDS: u64 = 11_644_473_600;
+    let duration = time
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    (duration.as_secs() + UNIX_TO_FILETIME_SECONDS) * 10_000_000
+        + duration.subsec_nanos() as u64 / 100
+}
+
+fn write_recycle_bin_info(i_path: &std::path::Path, original_path: &str, file_size: u64) -> AppResult<()> {
+    let deletion_time = system_time_to_filetime(SystemTime::now());
+
+    // UTF-16 LE path with null terminator
+    let wide_path: Vec<u16> = OsStr::new(original_path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let path_char_count = wide_path.len() as u32;
+
+    let mut buffer = Vec::new();
+    buffer.extend_from_slice(&2u64.to_le_bytes()); // version 2
+    buffer.extend_from_slice(&file_size.to_le_bytes());
+    buffer.extend_from_slice(&deletion_time.to_le_bytes());
+    buffer.extend_from_slice(&path_char_count.to_le_bytes());
+    for word in &wide_path {
+        buffer.extend_from_slice(&word.to_le_bytes());
+    }
+
+    fs::write(i_path, &buffer)?;
+    Ok(())
+}
+
+fn generate_unique_id(recycle_bin_path: &std::path::Path) -> AppResult<String> {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    let seed = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+
+    let mut n = seed;
+    for _ in 0..10_000 {
+        let mut id = String::with_capacity(6);
+        let mut v = n;
+        for _ in 0..6 {
+            id.push(CHARS[(v % CHARS.len() as u64) as usize] as char);
+            v /= CHARS.len() as u64;
+        }
+
+        let i_prefix = format!("$I{}", id);
+        let r_prefix = format!("$R{}", id);
+
+        let taken = fs::read_dir(recycle_bin_path)
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    let name = e.file_name().to_string_lossy().to_uppercase();
+                    name.starts_with(&i_prefix) || name.starts_with(&r_prefix)
+                })
+            })
+            .unwrap_or(false);
+
+        if !taken {
+            return Ok(id);
+        }
+        n = n.wrapping_add(1);
+    }
+
+    Err(AppError::FileSystemError(
+        "Could not generate unique recycle bin ID".into(),
+    ))
+}
+
+#[tauri::command]
+pub fn delete_permanently(paths: Vec<String>) -> AppResult<()> {
+    for path_str in &paths {
+        let path = PathBuf::from(path_str);
+        if path.is_dir() {
+            fs::remove_dir_all(&path)?;
+        } else {
+            fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn move_to_trash(paths: Vec<String>, state: tauri::State<Mutex<AppState>>) -> AppResult<()> {
+    let user_sid = {
+        let app_state = state.lock()?;
+        app_state.current_user_id.clone()
+    };
+
+    for path_str in &paths {
+        let src = PathBuf::from(path_str);
+
+        // "C:" → "C:\$Recycle.Bin\{SID}"
+        let drive = path_str
+            .get(..2)
+            .ok_or_else(|| AppError::InvalidInput("Path has no drive component".into()))?;
+        let recycle_bin = PathBuf::from(format!("{}\\$Recycle.Bin\\{}", drive, user_sid));
+
+        if !recycle_bin.exists() {
+            fs::create_dir_all(&recycle_bin)?;
+        }
+
+        let unique_id = generate_unique_id(&recycle_bin)?;
+
+        let extension = src.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let suffix = if extension.is_empty() {
+            unique_id
+        } else {
+            format!("{}.{}", unique_id, extension)
+        };
+
+        let i_path = recycle_bin.join(format!("$I{}", suffix));
+        let r_path = recycle_bin.join(format!("$R{}", suffix));
+
+        let metadata = fs::metadata(&src)?;
+        let file_size = if metadata.is_file() { metadata.len() } else { 0 };
+
+        write_recycle_bin_info(&i_path, path_str, file_size)?;
+        fs::rename(&src, &r_path)?;
+    }
 
     Ok(())
 }

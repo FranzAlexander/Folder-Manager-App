@@ -263,6 +263,22 @@ export class FileExplorerState {
     this.isSearching = false;
   }
 
+  async moveSelectedToTrash() {
+    const paths = this.selectedEntries.map((e) => e.path);
+    if (paths.length === 0) return;
+    await this.trash.moveToTrash(paths);
+    this.selection.clearSelection();
+    await this.updateEntries(this.currentDir);
+  }
+
+  async deletePermanentlySelected() {
+    const paths = this.selectedEntries.map((e) => e.path);
+    if (paths.length === 0) return;
+    await invoke("delete_permanently", { paths });
+    this.selection.clearSelection();
+    await this.updateEntries(this.currentDir);
+  }
+
   async restoreSelected() {
     await Promise.all(
       this.selectedEntries.map((e) => invoke("restore_trash_entry", { iFilePath: e.path })),
