@@ -17,7 +17,7 @@
     }
 
     await fileExplorer.setRootDir(rootDir);
-    await Promise.all([tags.loadAllTags(), statuses.loadAllStatuses()]);
+    await Promise.all([tags.loadAllTags(), statuses.loadAllStatuses(), fileExplorer.trash.loadCount()]);
   });
 </script>
 
