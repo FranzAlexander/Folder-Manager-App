@@ -3,12 +3,18 @@ import { invoke } from "@tauri-apps/api/core";
 
 export class TrashState {
   entries = $state<FileSystemEntry[]>([]);
+  count = $state(0);
 
   constructor(private setEntries: (entries: FileSystemEntry[]) => void) {}
+
+  async loadCount() {
+    this.count = await invoke<number>("get_trash_count");
+  }
 
   async load() {
     const entries = await invoke<FileSystemEntry[]>("get_trash_entries");
     this.entries = entries;
+    this.count = entries.length;
     this.setEntries(entries);
   }
 

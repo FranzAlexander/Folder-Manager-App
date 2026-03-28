@@ -76,6 +76,34 @@ fn decode_utf16_le(bytes: &[u8]) -> AppResult<String> {
 }
 
 #[tauri::command]
+pub fn get_trash_count(state: tauri::State<Mutex<AppState>>) -> AppResult<usize> {
+    let app_state = state.lock()?;
+    let trash_paths = build_trash_paths(&app_state.current_user_id);
+    let mut count = 0;
+
+    for trash_path in trash_paths {
+        let Ok(dir_iter) = fs::read_dir(&trash_path) else {
+            continue;
+        };
+        for entry in dir_iter {
+            let Ok(entry) = entry else { continue };
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if name.starts_with("$I") {
+                let r_name = name.replacen("$I", "$R", 1);
+                if path.with_file_name(r_name).exists() {
+                    count += 1;
+                }
+            }
+        }
+    }
+
+    Ok(count)
+}
+
+#[tauri::command]
 pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<FileSystemEntry>> {
     let app_state = state.lock()?;
 
