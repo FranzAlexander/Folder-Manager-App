@@ -14,7 +14,8 @@ use tauri::Manager;
 use crate::{
     commands::{
         file::{
-            get_root_directory, read_directory, search_files, set_root_directory, start_executable,
+            get_root_directory, open_file, read_directory, search_files, set_root_directory,
+            start_executable,
         },
         operation::{cancel_operation, execute_operation, prepare_operation},
         status::{assign_status, create_status, get_statuses},
@@ -57,6 +58,7 @@ pub fn run() {
             create_status,
             assign_status,
             start_executable,
+            open_file,
             search_files,
             prepare_operation,
             execute_operation,

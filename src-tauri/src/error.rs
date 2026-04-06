@@ -97,6 +97,12 @@ impl From<tauri_plugin_shell::Error> for AppError {
     }
 }
 
+impl From<tauri_plugin_opener::Error> for AppError {
+    fn from(err: tauri_plugin_opener::Error) -> Self {
+        AppError::FileSystemError(err.to_string())
+    }
+}
+
 impl From<&str> for AppError {
     fn from(err: &str) -> Self {
         AppError::InvalidInput(err.to_string())

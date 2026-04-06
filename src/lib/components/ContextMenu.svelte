@@ -2,7 +2,6 @@
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
   import type { FileSystemEntry } from "$lib/types";
   import { Copy, Scissors, Clipboard, FolderOpen, RotateCcw, Trash2 } from "@lucide/svelte";
-  import { confirm } from "@tauri-apps/plugin-dialog";
 
   let {
     x,
@@ -21,7 +20,7 @@
   } = $props();
 
   const isTrash = $derived(fileExplorer.currentDir === "trash://");
-  const isOpenable = $derived(!isTrash && (entry.isDir || entry.fileType === "EXE"));
+  const isOpenable = $derived(!isTrash && (entry.isDir || entry.isFile));
   const hasClipboard = $derived(!fileExplorer.clipboard.isEmpty);
   const selectedEntries = $derived(fileExplorer.selectedEntries);
 

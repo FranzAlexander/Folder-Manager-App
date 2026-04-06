@@ -63,6 +63,13 @@ export function createKeyboardShortcuts(
       return;
     }
 
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const selected = fileExplorer.selectedEntry;
+      if (selected && !isTrash) fileExplorer.openEntry(selected);
+      return;
+    }
+
     if (event.key === "Escape") {
       fileExplorer.clipboard.clear();
       return;

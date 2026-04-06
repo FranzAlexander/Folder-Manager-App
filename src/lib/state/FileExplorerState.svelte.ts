@@ -5,7 +5,7 @@ import type {
   SearchEvent,
 } from "$lib/types";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { message, open } from "@tauri-apps/plugin-dialog";
 import { SelectionState } from "./SelectionState.svelte";
 import { statusManager } from "$lib/state/StatusManager.svelte";
 import { ClipboardState } from "./ClipboardState.svelte";
@@ -90,10 +90,11 @@ export class FileExplorerState {
   openEntry = (entry: FileSystemEntry) => {
     if (entry.isDir) {
       this.navigateToDirectory(entry.path);
+      return;
     }
 
-    if (entry.isFile && entry.fileType === "EXE") {
-      this.startExecutable(entry.path);
+    if (entry.isFile) {
+      this.openFile(entry.path);
     }
   };
 
@@ -161,8 +162,20 @@ export class FileExplorerState {
     if (event.button === 4) this.goForward();
   };
 
+  openFile = async (path: string) => {
+    try {
+      await invoke("open_file", { path });
+    } catch (e) {
+      await message(String(e), { title: "Failed to open file", kind: "error" });
+    }
+  };
+
   startExecutable = async (path: string) => {
-    await invoke("start_executable", { path });
+    try {
+      await invoke("start_executable", { path });
+    } catch (e) {
+      await message(String(e), { title: "Failed to launch executable", kind: "error" });
+    }
   };
 
   sortColumns = (columnKey: ColumnKey) => {

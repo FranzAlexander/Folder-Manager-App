@@ -86,6 +86,18 @@ pub fn read_directory(
 }
 
 #[tauri::command]
+pub fn open_file(app: tauri::AppHandle, path: String) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+
+    app.opener().open_path(&path, None::<&str>)?;
+
+    let state = app.state::<Mutex<AppState>>();
+    let app_state = state.lock()?;
+    update_file_last_opened(&app_state.conn, &path)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn start_executable(app: tauri::AppHandle, path: String) -> AppResult<()> {
     use tauri_plugin_shell::ShellExt;
 
