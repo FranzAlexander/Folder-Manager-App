@@ -5,18 +5,20 @@
   let { fileExplorer }: { fileExplorer: FileExplorerState } = $props();
   const tags = $derived(fileExplorer.tags);
   const statuses = $derived(fileExplorer.statuses);
+  const selectedEntry = $derived(fileExplorer.selectedEntry);
+  const assignedTagIds = $derived(selectedEntry?.tagIds ?? []);
+  const assignedStatusIds = $derived(selectedEntry?.statusIds ?? []);
 
   async function handleCreateTag(tagName: string) {
     await tags.createTag(tagName);
   }
 
-  async function handleAssignTag(tagId: number) {
-    const tag = tags.resolveTag(tagId);
-    if (tag) {
-      await fileExplorer.assignTagToSelected(
-        fileExplorer.selectedEntryPath,
-        tag.name,
-      );
+  async function handleToggleTag(tagId: number) {
+    const path = fileExplorer.selectedEntryPath;
+    if (assignedTagIds.includes(tagId)) {
+      await fileExplorer.unassignTagFromEntry(path, tagId);
+    } else {
+      await fileExplorer.assignTagToSelected(path, tagId);
     }
   }
 
@@ -24,11 +26,13 @@
     await statuses.createStatus(statusName);
   }
 
-  async function handleAssignStatus(statusId: number) {
-    await fileExplorer.assignStatusToSelected(
-      fileExplorer.selectedEntryPath,
-      statusId,
-    );
+  async function handleToggleStatus(statusId: number) {
+    const path = fileExplorer.selectedEntryPath;
+    if (assignedStatusIds.includes(statusId)) {
+      await fileExplorer.unassignStatusFromEntry(path, statusId);
+    } else {
+      await fileExplorer.assignStatusToSelected(path, statusId);
+    }
   }
 </script>
 
@@ -36,16 +40,18 @@
   <ItemSelector
     items={tags.allTags}
     name={"Tags"}
+    assignedIds={assignedTagIds}
     oncreate={handleCreateTag}
-    action={handleAssignTag}
-    disabled={!fileExplorer.selectedEntry}
+    action={handleToggleTag}
+    disabled={!selectedEntry}
   />
 
   <ItemSelector
     items={statuses.allStatuses}
     name={"Status"}
+    assignedIds={assignedStatusIds}
     oncreate={handleCreateStatus}
-    action={handleAssignStatus}
-    disabled={!fileExplorer.selectedEntry}
+    action={handleToggleStatus}
+    disabled={!selectedEntry}
   />
 </div>

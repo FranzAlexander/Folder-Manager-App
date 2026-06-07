@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use crate::{
-    db::status_repository::{insert_file_status, insert_status, select_all_statuses},
+    db::status_repository::{delete_file_status, insert_file_status, insert_status, select_all_statuses},
     error::AppResult,
     model::{AppState, Status},
 };
@@ -36,6 +36,20 @@ pub fn assign_status(
     let conn = &app_state.conn;
 
     insert_file_status(conn, path, status_id)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unassign_status(
+    state: tauri::State<Mutex<AppState>>,
+    path: String,
+    status_id: i64,
+) -> AppResult<()> {
+    let app_state = state.lock().unwrap();
+    let conn = &app_state.conn;
+
+    delete_file_status(conn, &path, status_id)?;
 
     Ok(())
 }

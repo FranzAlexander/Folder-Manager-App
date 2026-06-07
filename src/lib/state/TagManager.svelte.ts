@@ -17,12 +17,12 @@ export class TagManager {
     return tag;
   }
 
-  async assignTag(filePath: string, tagName: string): Promise<Tag> {
-    const tag = await invoke<Tag>("assign_tag", { filePath, tagName });
+  async assignTag(filePath: string, tagId: number): Promise<void> {
+    await invoke("assign_tag", { path: filePath, tagId });
+  }
 
-    this.tagsById.set(tag.id, tag);
-
-    return tag;
+  async unassignTag(filePath: string, tagId: number): Promise<void> {
+    await invoke("unassign_tag", { path: filePath, tagId });
   }
 
   resolveTag(tagId: number): Tag | undefined {

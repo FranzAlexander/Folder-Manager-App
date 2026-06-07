@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use crate::{
-    db::tag_repository::{insert_file_tag, insert_tag, select_all_tags},
+    db::tag_repository::{delete_file_tag, insert_file_tag, insert_tag, select_all_tags},
     error::AppResult,
     model::{AppState, Tag},
 };
@@ -36,6 +36,20 @@ pub fn assign_tag(
     let conn = &app_state.conn;
 
     insert_file_tag(conn, path, tag_id)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unassign_tag(
+    state: tauri::State<Mutex<AppState>>,
+    path: String,
+    tag_id: i64,
+) -> AppResult<()> {
+    let app_state = state.lock().unwrap();
+    let conn = &app_state.conn;
+
+    delete_file_tag(conn, &path, tag_id)?;
 
     Ok(())
 }
