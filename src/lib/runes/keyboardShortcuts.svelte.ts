@@ -63,6 +63,19 @@ export function createKeyboardShortcuts(
       return;
     }
 
+    if (ctrl && event.shiftKey && event.key === "N") {
+      event.preventDefault();
+      if (!isTrash) await fileExplorer.createFolder();
+      return;
+    }
+
+    if (event.key === "F2") {
+      event.preventDefault();
+      const selected = fileExplorer.selectedEntry;
+      if (selected && !isTrash) fileExplorer.startRename(selected);
+      return;
+    }
+
     if (event.key === "Enter") {
       event.preventDefault();
       const selected = fileExplorer.selectedEntry;

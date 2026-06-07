@@ -5,8 +5,6 @@ export class TrashState {
   entries = $state<FileSystemEntry[]>([]);
   count = $state(0);
 
-  constructor(private setEntries: (entries: FileSystemEntry[]) => void) {}
-
   async loadCount() {
     this.count = await invoke<number>("get_trash_count");
   }
@@ -15,7 +13,6 @@ export class TrashState {
     const entries = await invoke<FileSystemEntry[]>("get_trash_entries");
     this.entries = entries;
     this.count = entries.length;
-    this.setEntries(entries);
   }
 
   async restore(iFilePath: string) {
@@ -32,6 +29,7 @@ export class TrashState {
 
   async moveToTrash(paths: string[]) {
     await invoke("move_to_trash", { paths });
+    await this.loadCount();
   }
 
   async deletePermanently(iFilePath: string) {

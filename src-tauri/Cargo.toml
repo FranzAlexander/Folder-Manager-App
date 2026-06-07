@@ -29,6 +29,7 @@ dunce = "1.0.5"
 rand = "0.8"
 thiserror = "2.0.17"
 tauri-plugin-shell = "2"
+notify = { version = "8.2.0", features = ["serde"] }
 
 [dependencies.windows-sys]
 version = ">=0.59, <=0.61.2"

@@ -180,6 +180,7 @@ pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<
                     file_type,
                     tag_ids: Vec::new(),
                     status_ids: Vec::new(),
+                    last_opened: None,
                 });
             }
         }
@@ -334,7 +335,8 @@ pub fn move_to_trash(paths: Vec<String>, state: tauri::State<Mutex<AppState>>) -
             .components()
             .next()
             .ok_or_else(|| AppError::InvalidInput("Path has no drive component".into()))?;
-        let recycle_bin = PathBuf::from(drive.as_os_str())
+        // "G:" is CWD-relative on Windows; "G:\" is the absolute root
+        let recycle_bin = PathBuf::from(format!("{}\\", drive.as_os_str().to_string_lossy()))
             .join("$Recycle.Bin")
             .join(&user_sid);
 

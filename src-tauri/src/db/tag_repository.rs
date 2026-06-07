@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use crate::{error::AppResult, model::Tag};
 
@@ -28,7 +28,7 @@ pub fn insert_tag(conn: &Connection, tag: String) -> AppResult<Tag> {
 }
 
 pub fn insert_file_tag(conn: &Connection, path: String, tag_id: i64) -> AppResult<()> {
-    let file_id = conn.query_one(
+    let file_id: i64 = conn.query_row(
         "SELECT id FROM user_file_data WHERE path = ?1",
         [&path],
         |row| row.get(0),
@@ -36,8 +36,18 @@ pub fn insert_file_tag(conn: &Connection, path: String, tag_id: i64) -> AppResul
 
     conn.execute(
         "INSERT OR IGNORE INTO file_tags(file_id, tag_id) VALUES (?1, ?2)",
-        [&file_id, &tag_id],
+        [file_id, tag_id],
     )?;
 
+    Ok(())
+}
+
+pub fn delete_file_tag(conn: &Connection, path: &str, tag_id: i64) -> AppResult<()> {
+    conn.execute(
+        "DELETE FROM file_tags
+         WHERE file_id = (SELECT id FROM user_file_data WHERE path = ?1)
+         AND tag_id = ?2",
+        params![path, tag_id],
+    )?;
     Ok(())
 }

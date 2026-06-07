@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
-  import { RotateCcw, Trash2, Eraser } from "@lucide/svelte";
+  import { FolderPlus, RotateCcw, Trash2, Eraser } from "@lucide/svelte";
 
   let { fileExplorer }: { fileExplorer: FileExplorerState } = $props();
 
@@ -8,7 +8,18 @@
   const hasSelection = $derived(fileExplorer.selectedEntries.length > 0);
 </script>
 
-{#if isTrash}
+{#if !isTrash}
+  <div class="border-border flex items-center gap-1 border-b px-3 py-1">
+    <button
+      class="hover:bg-muted flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm"
+      onclick={() => fileExplorer.createFolder()}
+    >
+      <FolderPlus class="size-3.5" />
+      New Folder
+      <span class="text-muted-foreground ml-1 text-xs">Ctrl+Shift+N</span>
+    </button>
+  </div>
+{:else if isTrash}
   <div class="border-border flex items-center gap-1 border-b px-3 py-1">
     <button
       class="hover:bg-muted disabled:text-muted-foreground flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
@@ -39,3 +50,4 @@
     </button>
   </div>
 {/if}
+

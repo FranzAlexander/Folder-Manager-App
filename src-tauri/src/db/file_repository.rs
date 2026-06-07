@@ -154,11 +154,59 @@ pub fn update_file_paths(conn: &Connection, path_updates: &[(String, String)]) -
     Ok(())
 }
 
+pub fn rename_file_path(conn: &Connection, old_path: &str, new_path: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE user_file_data SET path = ?1 WHERE path = ?2",
+        params![new_path, old_path],
+    )?;
+    Ok(())
+}
+
 pub fn update_file_last_opened(conn: &Connection, path: &str) -> AppResult<()> {
     let mut stmt = conn.prepare("UPDATE user_file_data SET last_opened = ?1 WHERE path = ?2")?;
 
     stmt.execute(params![Utc::now().to_rfc3339(), path])?;
     Ok(())
+}
+
+pub fn upsert_file_last_opened(conn: &Connection, path: &str) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO user_file_data (path, last_opened) VALUES (?1, ?2)
+         ON CONFLICT(path) DO UPDATE SET last_opened = excluded.last_opened",
+        params![path, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+pub fn select_file_last_opened(
+    conn: &Connection,
+    paths: Vec<&str>,
+) -> AppResult<HashMap<String, String>> {
+    if paths.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let placeholders = paths.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+
+    let query = format!(
+        "SELECT path, last_opened FROM user_file_data WHERE path IN ({}) AND last_opened IS NOT NULL",
+        placeholders
+    );
+
+    let mut stmt = conn.prepare(&query)?;
+
+    let mut path_to_last_opened: HashMap<String, String> = HashMap::new();
+
+    let rows = stmt.query_map(params_from_iter(paths), |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    for row in rows {
+        let (path, last_opened) = row?;
+        path_to_last_opened.insert(path, last_opened);
+    }
+
+    Ok(path_to_last_opened)
 }
 
 pub fn copy_file_metadata(conn: &Connection, copies: &[(String, String)]) -> AppResult<()> {
@@ -187,14 +235,14 @@ pub fn copy_file_metadata(conn: &Connection, copies: &[(String, String)]) -> App
         )?;
 
         conn.execute(
-            "INSERT INTO file_tags (file_id, tag_id)
-            SELECT ?1 tag_id FROM file_tags WHERE file_id = ?2",
+            "INSERT OR IGNORE INTO file_tags (file_id, tag_id)
+            SELECT ?1, tag_id FROM file_tags WHERE file_id = ?2",
             params![dest_id, src.id],
         )?;
 
         conn.execute(
-            "INSERT INTO file_status (file_id, status_id)
-            SELECT ?1 status_id FROM file_status WHERE file_id = ?2",
+            "INSERT OR IGNORE INTO file_status (file_id, status_id)
+            SELECT ?1, status_id FROM file_status WHERE file_id = ?2",
             params![dest_id, src.id],
         )?;
     }

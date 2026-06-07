@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use crate::{error::AppResult, model::Status};
 
@@ -25,7 +25,7 @@ pub fn insert_status(conn: &Connection, status: String) -> AppResult<Status> {
 }
 
 pub fn insert_file_status(conn: &Connection, path: String, status_id: i64) -> AppResult<()> {
-    let file_id = conn.query_one(
+    let file_id: i64 = conn.query_row(
         "SELECT id FROM user_file_data WHERE path = ?1",
         [&path],
         |row| row.get(0),
@@ -33,8 +33,18 @@ pub fn insert_file_status(conn: &Connection, path: String, status_id: i64) -> Ap
 
     conn.execute(
         "INSERT OR IGNORE INTO file_status(file_id, status_id) VALUES(?1, ?2)",
-        [&file_id, &status_id],
+        [file_id, status_id],
     )?;
 
+    Ok(())
+}
+
+pub fn delete_file_status(conn: &Connection, path: &str, status_id: i64) -> AppResult<()> {
+    conn.execute(
+        "DELETE FROM file_status
+         WHERE file_id = (SELECT id FROM user_file_data WHERE path = ?1)
+         AND status_id = ?2",
+        params![path, status_id],
+    )?;
     Ok(())
 }

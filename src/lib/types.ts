@@ -9,6 +9,7 @@ export interface FileSystemEntry {
   fileType: string;
   tagIds: number[];
   statusIds: number[];
+  lastOpened: string | null;
 }
 
 export interface Tag {
@@ -30,6 +31,7 @@ export interface ConflictingEntry {
 export type ColumnKey =
   | "name"
   | "dateModified"
+  | "lastOpened"
   | "fileType"
   | "size"
   | "tags"

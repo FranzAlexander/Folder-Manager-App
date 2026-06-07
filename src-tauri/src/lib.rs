@@ -14,13 +14,17 @@ use tauri::Manager;
 use crate::{
     commands::{
         file::{
-            get_root_directory, open_file, read_directory, search_files, set_root_directory,
-            start_executable,
+            create_folder, get_root_directory, open_file, read_directory, rename_entry,
+            search_files, set_root_directory, start_executable,
         },
         operation::{cancel_operation, execute_operation, prepare_operation},
-        status::{assign_status, create_status, get_statuses},
-        tag::{assign_tag, create_tag, get_tags},
-        trash::{delete_permanently, delete_trash_entry, get_trash_count, get_trash_entries, move_to_trash, restore_trash_entry},
+        status::{assign_status, create_status, get_statuses, unassign_status},
+        tag::{assign_tag, create_tag, get_tags, unassign_tag},
+        trash::{
+            delete_permanently, delete_trash_entry, get_trash_count, get_trash_entries,
+            move_to_trash, restore_trash_entry,
+        },
+        watcher::{unwatch_directory, watch_directory},
     },
     db::db_init,
     model::AppState,
@@ -42,6 +46,7 @@ pub fn run() {
                 file_op_entries: Vec::new(),
                 operation_type: None,
                 current_user_id,
+                watcher: None,
             };
             app.manage(Mutex::new(app_data));
 
@@ -54,9 +59,11 @@ pub fn run() {
             create_tag,
             get_tags,
             assign_tag,
+            unassign_tag,
             get_statuses,
             create_status,
             assign_status,
+            unassign_status,
             start_executable,
             open_file,
             search_files,
@@ -68,7 +75,11 @@ pub fn run() {
             restore_trash_entry,
             delete_trash_entry,
             move_to_trash,
-            delete_permanently
+            delete_permanently,
+            watch_directory,
+            unwatch_directory,
+            rename_entry,
+            create_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

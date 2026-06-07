@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use notify::RecommendedWatcher;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,7 @@ pub struct AppState {
     pub file_op_entries: Vec<FileOperationEntry>,
     pub operation_type: Option<OperationType>,
     pub current_user_id: String,
+    pub watcher: Option<RecommendedWatcher>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -48,6 +50,7 @@ pub struct FileSystemEntry {
     pub file_type: String,
     pub tag_ids: Vec<i64>,
     pub status_ids: Vec<i64>,
+    pub last_opened: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

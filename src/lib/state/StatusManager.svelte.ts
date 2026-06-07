@@ -17,16 +17,12 @@ export class StatusManager {
     return status;
   }
 
-  async setStatus(filePath: string, statusId: number): Promise<Status> {
-    const status = await invoke<Status>("assign_status", {
-      path: filePath,
-      statusId,
-    });
+  async setStatus(filePath: string, statusId: number): Promise<void> {
+    await invoke("assign_status", { path: filePath, statusId });
+  }
 
-    if (!this.statusesById.has(status.id)) {
-      this.statusesById.set(status.id, status);
-    }
-    return status;
+  async unassignStatus(filePath: string, statusId: number): Promise<void> {
+    await invoke("unassign_status", { path: filePath, statusId });
   }
 
   resolveStatus(statusId: number): Status | undefined {

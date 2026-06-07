@@ -1,17 +1,19 @@
 <script lang="ts">
   import type { Tag } from "$lib/types";
-  import { Search } from "@lucide/svelte";
+  import { Check, Search } from "@lucide/svelte";
   import { Command, Popover } from "bits-ui";
 
   let {
     items,
     name,
+    assignedIds = [],
     oncreate,
     action,
     disabled,
   }: {
     items: Tag[];
     name: string;
+    assignedIds?: number[];
     oncreate: (search: string) => Promise<void>;
     action: (id: number) => Promise<void>;
     disabled?: boolean;
@@ -67,11 +69,17 @@
               </Command.GroupHeading>
               <Command.GroupItems class="flex flex-wrap gap-1.5 px-1">
                 {#each items as item (item)}
+                  {@const assigned = assignedIds.includes(item.id)}
                   <Command.Item {disabled} onSelect={() => onaction(item.id)}>
                     <div
-                      class="bg-accent/10 text-accent hover:bg-accent hover:text-accent-foreground cursor-pointer rounded-full px-3 py-1 text-xs font-medium transition-colors"
+                      class="inline-flex cursor-pointer items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors {assigned
+                        ? 'bg-accent text-accent-foreground hover:bg-accent/80'
+                        : 'bg-accent/10 text-accent hover:bg-accent hover:text-accent-foreground'}"
                       title={item.name}
                     >
+                      {#if assigned}
+                        <Check class="size-3 shrink-0" />
+                      {/if}
                       {item.name}
                     </div>
                   </Command.Item>
