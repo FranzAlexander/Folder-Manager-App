@@ -29,11 +29,30 @@
   let columns = $state([
     { key: "name" as ColumnKey, label: "Name", width: 300 },
     { key: "dateModified" as ColumnKey, label: "Date Modified", width: 180 },
+    { key: "lastOpened" as ColumnKey, label: "Last Opened", width: 180 },
     { key: "fileType" as ColumnKey, label: "Type", width: 120 },
     { key: "size" as ColumnKey, label: "Size", width: 100 },
     { key: "tags" as ColumnKey, label: "Tags", width: 200 },
     { key: "status" as ColumnKey, label: "Status", width: 150 },
   ]);
+
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus();
+    node.select();
+  }
+
+  let viewportEl = $state<HTMLElement | null>(null);
+
+  $effect(() => {
+    const idx = fileExplorer.pendingScrollToIndex;
+    if (idx === null || !viewportEl) return;
+    const itemHeight = 34;
+    const containerHeight = 624;
+    const targetScrollTop = Math.max(0, idx * itemHeight - containerHeight / 2 + itemHeight / 2);
+    virtualScroll.scrollTop = targetScrollTop;
+    viewportEl.scrollTop = targetScrollTop;
+    fileExplorer.pendingScrollToIndex = null;
+  });
 
   let moveAlertOpen = $state(false);
   let conflictEntries = $state<ConflictingEntry[]>([]);
@@ -242,6 +261,7 @@
   <ScrollArea.Root class="flex-1 overflow-hidden" type="hover">
     <ScrollArea.Viewport
       class="h-full w-full"
+      bind:ref={viewportEl}
       onscroll={(e) => (virtualScroll.scrollTop = e.currentTarget.scrollTop)}
     >
       <div class="relative py-1" style="height: {virtualScroll.totalHeight}px">
@@ -278,7 +298,24 @@
               >
                 <div class="flex min-w-0 items-center gap-2">
                   <FileIcon file={entry} size={18} />
-                  <span class="text-primary truncate text-sm font-medium">{entry.name}</span>
+                  {#if fileExplorer.renamingPath === entry.path}
+                    <input
+                      type="text"
+                      bind:value={fileExplorer.renameValue}
+                      class="text-primary min-w-0 flex-1 rounded border border-border bg-background px-1 text-sm font-medium outline-none focus:ring-1 focus:ring-accent"
+                      use:focusOnMount
+                      onkeydown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); fileExplorer.commitRename(); }
+                        if (e.key === "Escape") { e.preventDefault(); fileExplorer.cancelRename(); }
+                        e.stopPropagation();
+                      }}
+                      onblur={() => fileExplorer.commitRename()}
+                      onclick={(e) => e.stopPropagation()}
+                      ondblclick={(e) => e.stopPropagation()}
+                    />
+                  {:else}
+                    <span class="text-primary truncate text-sm font-medium">{entry.name}</span>
+                  {/if}
                 </div>
               </div>
 
@@ -288,6 +325,14 @@
                 style="width: {getColumnWidth('dateModified')}px;"
               >
                 {formatDate(entry.dateModified)}
+              </div>
+
+              <!-- Last Opened -->
+              <div
+                class="flex shrink-0 items-center px-3 py-1.5 text-sm text-muted-foreground"
+                style="width: {getColumnWidth('lastOpened')}px;"
+              >
+                {entry.lastOpened ? formatDate(entry.lastOpened) : "—"}
               </div>
 
               <!-- Type -->

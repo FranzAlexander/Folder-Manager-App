@@ -6,7 +6,8 @@ use tauri::Manager;
 
 use crate::{
     db::file_repository::{
-        insert_files, select_file_status, select_file_tags, select_files, update_file_last_opened,
+        insert_files, rename_file_path, select_file_last_opened, select_file_status,
+        select_file_tags, select_files, update_file_last_opened, upsert_file_last_opened,
     },
     error::AppResult,
     model::{AppConfig, AppState, FileSystemEntry, SearchEvent},
@@ -79,6 +80,7 @@ pub fn read_directory(
     let app_state = state.lock()?;
     let conn = &app_state.conn;
 
+    upsert_file_last_opened(conn, &path)?;
     ensure_files_in_database(conn, &entries)?;
     update_with_tags_and_status(conn, &mut entries)?;
 
@@ -244,6 +246,7 @@ fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileS
         file_type,
         tag_ids: Vec::new(),
         status_ids: Vec::new(),
+        last_opened: None,
     })
 }
 
@@ -292,7 +295,8 @@ fn update_with_tags_and_status(
     let paths: Vec<&str> = entries.iter().map(|e| e.path.as_str()).collect();
 
     let path_to_tags = select_file_tags(conn, paths.clone())?;
-    let path_to_status = select_file_status(conn, paths)?;
+    let path_to_status = select_file_status(conn, paths.clone())?;
+    let path_to_last_opened = select_file_last_opened(conn, paths)?;
 
     for entry in entries {
         if let Some(tag_ids) = path_to_tags.get(&entry.path) {
@@ -301,7 +305,78 @@ fn update_with_tags_and_status(
         if let Some(status_ids) = path_to_status.get(&entry.path) {
             entry.status_ids = status_ids.clone();
         }
+        if let Some(last_opened) = path_to_last_opened.get(&entry.path) {
+            entry.last_opened = Some(last_opened.clone());
+        }
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_folder(parent: String, name: String) -> AppResult<String> {
+    use crate::error::AppError;
+
+    let base = PathBuf::from(&parent);
+    let mut candidate = base.join(&name);
+
+    if candidate.exists() {
+        let mut counter = 2u32;
+        loop {
+            candidate = base.join(format!("{} ({})", name, counter));
+            if !candidate.exists() {
+                break;
+            }
+            counter += 1;
+        }
+    }
+
+    fs::create_dir(&candidate)?;
+
+    let path = dunce::canonicalize(&candidate)
+        .map_err(|e| AppError::FileSystemError(e.to_string()))?
+        .to_string_lossy()
+        .to_string();
+
+    Ok(path)
+}
+
+#[tauri::command]
+pub fn rename_entry(
+    state: tauri::State<Mutex<AppState>>,
+    old_path: String,
+    new_name: String,
+) -> AppResult<()> {
+    use crate::error::AppError;
+
+    if new_name.is_empty() {
+        return Err(AppError::InvalidInput("Name cannot be empty".to_string()));
+    }
+    if new_name.contains('/') || new_name.contains('\\') {
+        return Err(AppError::InvalidInput(
+            "Name cannot contain path separators".to_string(),
+        ));
+    }
+
+    let old = PathBuf::from(&old_path);
+    let new = old.with_file_name(&new_name);
+
+    if new.exists() {
+        return Err(AppError::AlreadyExists(format!(
+            "'{}' already exists",
+            new_name
+        )));
+    }
+
+    fs::rename(&old, &new)?;
+
+    let new_path = dunce::canonicalize(&new)
+        .map_err(|e| AppError::FileSystemError(e.to_string()))?
+        .to_string_lossy()
+        .to_string();
+
+    let app_state = state.lock()?;
+    rename_file_path(&app_state.conn, &old_path, &new_path)?;
+
     Ok(())
 }
 
