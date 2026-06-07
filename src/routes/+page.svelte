@@ -17,7 +17,16 @@
     }
 
     await fileExplorer.setRootDir(rootDir);
-    await Promise.all([tags.loadAllTags(), statuses.loadAllStatuses(), fileExplorer.trash.loadCount()]);
+    await Promise.all([
+      tags.loadAllTags(),
+      statuses.loadAllStatuses(),
+      fileExplorer.trash.loadCount(),
+    ]);
+  });
+
+  $effect(() => {
+    fileExplorer.startWatching();
+    return () => fileExplorer.stopWatching();
   });
 </script>
 

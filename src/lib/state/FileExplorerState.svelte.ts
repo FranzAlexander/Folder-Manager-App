@@ -11,20 +11,51 @@ import { statusManager } from "$lib/state/StatusManager.svelte";
 import { ClipboardState } from "./ClipboardState.svelte";
 import { tagManager } from "./TagManager.svelte";
 import { TrashState } from "./TrashState.svelte";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+function sortEntries(
+  entries: FileSystemEntry[],
+  column: ColumnKey,
+  direction: "asc" | "desc",
+): FileSystemEntry[] {
+  const dir = direction === "asc" ? 1 : -1;
+  return [...entries].sort((a, b) => {
+    const aValue = a[column as keyof FileSystemEntry];
+    const bValue = b[column as keyof FileSystemEntry];
+    if (aValue == null && bValue == null) return 0;
+    if (aValue == null) return 1;
+    if (bValue == null) return -1;
+    if (typeof aValue === "string" && typeof bValue === "string")
+      return aValue.localeCompare(bValue) * dir;
+    if (typeof aValue === "number" && typeof bValue === "number")
+      return (aValue - bValue) * dir;
+    return 0;
+  });
+}
 
 export class FileExplorerState {
   rootDir = $state<string>("");
   showSetup = $state(false);
   history = $state<string[]>([]);
   historyIndex = $state<number>(0);
-  entries = $state<FileSystemEntry[]>([]);
+  private _dirEntries = $state<FileSystemEntry[]>([]);
   sortedColumn = $state<ColumnKey>("name");
   sortedDirection = $state<"asc" | "desc">("desc");
 
+  renamingPath = $state<string | null>(null);
+  renameValue = $state("");
+  pendingScrollToIndex = $state<number | null>(null);
+
+  private dirChangeUnlisten: UnlistenFn | null = null;
+  private refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
   selection = new SelectionState();
   clipboard = new ClipboardState();
-  trash = new TrashState((entries) => {
-    this.entries = entries;
+  trash = new TrashState();
+  readonly entries = $derived.by(() => {
+    const base =
+      this.currentDir === "trash://" ? this.trash.entries : this._dirEntries;
+    return sortEntries(base, this.sortedColumn, this.sortedDirection);
   });
 
   isSearching = $state(false);
@@ -62,14 +93,61 @@ export class FileExplorerState {
     );
   }
 
+  createFolder = async () => {
+    const newPath: string = await invoke("create_folder", {
+      parent: this.currentDir,
+      name: "New Folder",
+    });
+    await this.updateEntries(this.currentDir);
+    const entry = this.entries.find((e) => e.path === newPath);
+    if (entry) {
+      const index = this.entries.indexOf(entry);
+      this.selection.selectSingle(entry, index);
+      this.pendingScrollToIndex = index;
+      this.startRename(entry);
+    }
+  };
+
+  startRename = (entry: FileSystemEntry) => {
+    this.renamingPath = entry.path;
+    this.renameValue = entry.name;
+  };
+
+  commitRename = async () => {
+    if (!this.renamingPath) return;
+    const oldPath = this.renamingPath;
+    const newName = this.renameValue.trim();
+    this.renamingPath = null;
+    this.renameValue = "";
+    if (!newName) return;
+    const entry = this.entries.find((e) => e.path === oldPath);
+    if (entry?.name === newName) return;
+    try {
+      await invoke("rename_entry", { oldPath, newName });
+      await this.updateEntries(this.currentDir);
+    } catch (e) {
+      const msg =
+        typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message: unknown }).message)
+          : String(e);
+      await message(msg, { title: "Rename failed", kind: "error" });
+    }
+  };
+
+  cancelRename = () => {
+    this.renamingPath = null;
+    this.renameValue = "";
+  };
+
   updateEntries = async (path: string) => {
-    this.entries = await invoke("read_directory", { path });
+    this._dirEntries = await invoke("read_directory", { path });
   };
 
   setRootDir = async (path: string) => {
     this.rootDir = path;
     this.history = [path];
     this.historyIndex = 0;
+    await invoke("watch_directory", { path });
     await this.updateEntries(path);
   };
 
@@ -98,6 +176,23 @@ export class FileExplorerState {
     }
   };
 
+  async startWatching() {
+    this.dirChangeUnlisten = await listen<string>("dir-changed", () => {
+      if (this.isSearching) return;
+      if (this.refreshTimeout !== null) clearTimeout(this.refreshTimeout);
+      this.refreshTimeout = setTimeout(async () => {
+        await this.updateEntries(this.currentDir);
+        this.refreshTimeout = null;
+      }, 300);
+    });
+  }
+
+  stopWatching() {
+    this.dirChangeUnlisten?.();
+    this.dirChangeUnlisten = null;
+    invoke("unwatch_directory");
+  }
+
   navigateToDirectory = async (path: string) => {
     if (this.historyIndex < this.history.length - 1) {
       this.history = this.history.slice(0, this.historyIndex + 1);
@@ -110,9 +205,11 @@ export class FileExplorerState {
     this.cancelSearch();
     this.selection.clearSelection();
 
-    if (path == "trash://") {
+    if (path === "trash://") {
+      await invoke("unwatch_directory");
       await this.trash.load();
     } else {
+      await invoke("watch_directory", { path });
       await this.updateEntries(path);
     }
   };
@@ -123,10 +220,15 @@ export class FileExplorerState {
 
       this.searchQuery = "";
       this.cancelSearch();
-
       this.selection.clearSelection();
 
-      await this.updateEntries(this.currentDir);
+      if (this.currentDir === "trash://") {
+        await invoke("unwatch_directory");
+        await this.trash.load();
+      } else {
+        await invoke("watch_directory", { path: this.currentDir });
+        await this.updateEntries(this.currentDir);
+      }
     }
   };
 
@@ -136,10 +238,15 @@ export class FileExplorerState {
 
       this.searchQuery = "";
       this.cancelSearch();
-
       this.selection.clearSelection();
 
-      await this.updateEntries(this.currentDir);
+      if (this.currentDir === "trash://") {
+        await invoke("unwatch_directory");
+        await this.trash.load();
+      } else {
+        await invoke("watch_directory", { path: this.currentDir });
+        await this.updateEntries(this.currentDir);
+      }
     }
   };
 
@@ -174,7 +281,10 @@ export class FileExplorerState {
     try {
       await invoke("start_executable", { path });
     } catch (e) {
-      await message(String(e), { title: "Failed to launch executable", kind: "error" });
+      await message(String(e), {
+        title: "Failed to launch executable",
+        kind: "error",
+      });
     }
   };
 
@@ -185,23 +295,6 @@ export class FileExplorerState {
       this.sortedColumn = columnKey;
       this.sortedDirection = "asc";
     }
-
-    const direction = this.sortedDirection === "asc" ? 1 : -1;
-
-    this.entries.sort((a, b) => {
-      const aValue = a[columnKey as keyof FileSystemEntry];
-      const bValue = b[columnKey as keyof FileSystemEntry];
-
-      if (typeof aValue === "string" && typeof bValue === "string") {
-        return aValue.localeCompare(bValue) * direction;
-      }
-
-      if (typeof aValue === "number" && typeof bValue === "number") {
-        return (aValue - bValue) * direction;
-      }
-
-      return 0;
-    });
   };
 
   search = (query: string) => {
@@ -232,25 +325,21 @@ export class FileExplorerState {
     const newEntries: FileSystemEntry[] = [];
 
     onEvent.onmessage = (searchEvent) => {
-      if (searchId !== this.currentSearchId) {
-        return searchEvent.event;
-      }
+      if (searchId !== this.currentSearchId) return;
 
       switch (searchEvent.event) {
         case "searching":
           newEntries.push(...searchEvent.data.entries);
-          this.entries = [...newEntries];
+          this._dirEntries = [...newEntries];
           break;
         case "done":
           this.isSearching = false;
           break;
         case "notFound":
-          this.entries = [];
+          this._dirEntries = [];
           this.isSearching = false;
           break;
       }
-
-      return searchEvent.event;
     };
 
     if (name !== "") {
@@ -262,7 +351,7 @@ export class FileExplorerState {
     } else {
       if (searchId === this.currentSearchId) {
         this.isSearching = false;
-        this.entries = [];
+        this._dirEntries = [];
       }
     }
   }
@@ -294,7 +383,9 @@ export class FileExplorerState {
 
   async restoreSelected() {
     await Promise.all(
-      this.selectedEntries.map((e) => invoke("restore_trash_entry", { iFilePath: e.path })),
+      this.selectedEntries.map((e) =>
+        invoke("restore_trash_entry", { iFilePath: e.path }),
+      ),
     );
     this.selection.clearSelection();
     await this.trash.load();
@@ -302,7 +393,9 @@ export class FileExplorerState {
 
   async deleteSelectedPermanently() {
     await Promise.all(
-      this.selectedEntries.map((e) => invoke("delete_trash_entry", { iFilePath: e.path })),
+      this.selectedEntries.map((e) =>
+        invoke("delete_trash_entry", { iFilePath: e.path }),
+      ),
     );
     this.selection.clearSelection();
     await this.trash.load();
@@ -340,13 +433,23 @@ export class FileExplorerState {
     await this.updateEntries(destPath);
   }
 
-  async assignTagToSelected(entryPath: string | undefined, tagName: string) {
+  async assignTagToSelected(entryPath: string | undefined, tagId: number) {
     if (!entryPath) return;
-    const tag = await this.tags.assignTag(entryPath, tagName);
+    await this.tags.assignTag(entryPath, tagId);
 
     const entry = this.entries.find((e) => e.path === entryPath);
-    if (entry && !entry.tagIds.includes(tag.id)) {
-      entry.tagIds = [...entry.tagIds, tag.id];
+    if (entry && !entry.tagIds.includes(tagId)) {
+      entry.tagIds = [...entry.tagIds, tagId];
+    }
+  }
+
+  async unassignTagFromEntry(entryPath: string | undefined, tagId: number) {
+    if (!entryPath) return;
+    await this.tags.unassignTag(entryPath, tagId);
+
+    const entry = this.entries.find((e) => e.path === entryPath);
+    if (entry) {
+      entry.tagIds = entry.tagIds.filter((id) => id !== tagId);
     }
   }
 
@@ -355,15 +458,21 @@ export class FileExplorerState {
     statusId: number,
   ) {
     if (!entryPath) return;
-    const status = await this.statuses.setStatus(entryPath, statusId);
+    await this.statuses.setStatus(entryPath, statusId);
 
     const entry = this.entries.find((e) => e.path === entryPath);
-    if (entry && !entry.statusIds.includes(status.id)) {
-      entry.statusIds = [...entry.statusIds, status.id];
+    if (entry && !entry.statusIds.includes(statusId)) {
+      entry.statusIds = [...entry.statusIds, statusId];
     }
   }
 
-  async loadTrash() {
-    this.entries = await invoke<FileSystemEntry[]>("get_trash_entries");
+  async unassignStatusFromEntry(entryPath: string | undefined, statusId: number) {
+    if (!entryPath) return;
+    await this.statuses.unassignStatus(entryPath, statusId);
+
+    const entry = this.entries.find((e) => e.path === entryPath);
+    if (entry) {
+      entry.statusIds = entry.statusIds.filter((id) => id !== statusId);
+    }
   }
 }
