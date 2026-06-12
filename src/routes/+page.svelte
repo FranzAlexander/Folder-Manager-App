@@ -3,36 +3,72 @@
   import { onMount } from "svelte";
   import FileTable from "$lib/components/FileTable.svelte";
   import { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
+  import { TabsState } from "$lib/state/TabsState.svelte";
   import NavBar from "$lib/components/navbar/NavBar.svelte";
   import Toolbar from "$lib/components/Toolbar.svelte";
+  import TabBar from "$lib/components/TabBar.svelte";
 
-  const fileExplorer = new FileExplorerState();
-  const { tags, statuses } = fileExplorer;
+  const firstTab = new FileExplorerState();
+  const tabsState = new TabsState(firstTab);
+
+  const fileExplorer = $derived(tabsState.activeTab);
+  const tags = $derived(fileExplorer.tags);
+  const statuses = $derived(fileExplorer.statuses);
 
   onMount(async () => {
     const rootDir: string | null = await invoke("get_root_directory");
     if (!rootDir) {
-      fileExplorer.showSetup = true;
+      firstTab.showSetup = true;
       return;
     }
 
-    await fileExplorer.setRootDir(rootDir);
+    await firstTab.setRootDir(rootDir);
     await Promise.all([
-      tags.loadAllTags(),
-      statuses.loadAllStatuses(),
-      fileExplorer.trash.loadCount(),
+      firstTab.tags.loadAllTags(),
+      firstTab.statuses.loadAllStatuses(),
+      firstTab.trash.loadCount(),
     ]);
   });
 
   $effect(() => {
-    fileExplorer.startWatching();
-    return () => fileExplorer.stopWatching();
+    const tab = tabsState.activeTab;
+    tab.startWatching();
+    if (tab.currentDir && tab.currentDir !== "trash://") {
+      invoke("watch_directory", { path: tab.currentDir });
+    }
+    return () => tab.stopWatching();
   });
+
+  async function newTab() {
+    await tabsState.newTab();
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.key === "t") {
+      e.preventDefault();
+      newTab();
+      return;
+    }
+    if (ctrl && e.key === "w") {
+      e.preventDefault();
+      tabsState.closeTab(tabsState.activeIndex);
+      return;
+    }
+    if (ctrl && e.key === "Tab") {
+      e.preventDefault();
+      e.shiftKey ? tabsState.prevTab() : tabsState.nextTab();
+    }
+  }
 </script>
 
-<svelte:window onmouseup={fileExplorer.handleMouseButton} />
+<svelte:window
+  onmouseup={(e) => fileExplorer.handleMouseButton(e)}
+  onkeydown={handleWindowKeydown}
+/>
 
 <main class="bg-background text-primary m-0 flex h-screen w-full flex-col">
+  <TabBar {tabsState} onnew={newTab} />
   <NavBar {fileExplorer} />
   <Toolbar {fileExplorer} />
 
@@ -41,6 +77,7 @@
       {fileExplorer}
       tags={tags.allTags}
       statusList={statuses.allStatuses}
+      onopennewtab={(path) => tabsState.openInNewTab(path, false)}
     />
   {:else}
     <div class="flex flex-1 flex-col items-center justify-center gap-3">

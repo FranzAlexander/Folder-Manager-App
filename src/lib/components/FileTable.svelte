@@ -20,10 +20,12 @@
     fileExplorer,
     tags,
     statusList,
+    onopennewtab,
   }: {
     fileExplorer: FileExplorerState;
     tags: Tag[];
     statusList: Status[];
+    onopennewtab?: (path: string) => void;
   } = $props();
 
   let columns = $state([
@@ -285,6 +287,8 @@
                 entry.path,
               ) && fileExplorer.clipboard.isCut}
               ondblclick={() => fileExplorer.openEntry(entry)}
+              onmousedown={(e) => { if (e.button === 1) e.preventDefault(); }}
+              onauxclick={(e) => { if (e.button === 1 && entry.isDir) onopennewtab?.(entry.path); }}
               oncontextmenu={(e) => handleContextMenu(e, entry, i + virtualScroll.visibleStart)}
               draggable="true"
               ondragstart={(e) => dragStart(e, entry.path, entry.isDir)}

@@ -177,7 +177,8 @@ export class FileExplorerState {
   };
 
   async startWatching() {
-    this.dirChangeUnlisten = await listen<string>("dir-changed", () => {
+    this.dirChangeUnlisten = await listen<string>("dir-changed", (event) => {
+      if (event.payload !== this.currentDir) return;
       if (this.isSearching) return;
       if (this.refreshTimeout !== null) clearTimeout(this.refreshTimeout);
       this.refreshTimeout = setTimeout(async () => {
