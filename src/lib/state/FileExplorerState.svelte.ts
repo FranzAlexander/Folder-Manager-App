@@ -2,16 +2,24 @@ import type {
   ColumnKey,
   ConflictingEntry,
   FileSystemEntry,
-  SearchEvent,
 } from "$lib/types";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { SelectionState } from "./SelectionState.svelte";
+import { SearchState } from "./SearchState.svelte";
+import { NavigationHistory } from "./NavigationHistory.svelte";
 import { statusManager } from "$lib/state/StatusManager.svelte";
 import { ClipboardState } from "./ClipboardState.svelte";
 import { tagManager } from "./TagManager.svelte";
 import { TrashState } from "./TrashState.svelte";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+// Cached once — constructing a Collator per comparison is what makes
+// localeCompare slow. `numeric` gives natural sort (file2 before file10),
+// `base` sensitivity makes it case-insensitive like Windows Explorer.
+const collator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
 
 function sortEntries(
   entries: FileSystemEntry[],
@@ -20,13 +28,16 @@ function sortEntries(
 ): FileSystemEntry[] {
   const dir = direction === "asc" ? 1 : -1;
   return [...entries].sort((a, b) => {
+    // Folders always sort above files, regardless of sort direction.
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+
     const aValue = a[column as keyof FileSystemEntry];
     const bValue = b[column as keyof FileSystemEntry];
     if (aValue == null && bValue == null) return 0;
     if (aValue == null) return 1;
     if (bValue == null) return -1;
     if (typeof aValue === "string" && typeof bValue === "string")
-      return aValue.localeCompare(bValue) * dir;
+      return collator.compare(aValue, bValue) * dir;
     if (typeof aValue === "number" && typeof bValue === "number")
       return (aValue - bValue) * dir;
     return 0;
@@ -36,8 +47,7 @@ function sortEntries(
 export class FileExplorerState {
   rootDir = $state<string>("");
   showSetup = $state(false);
-  history = $state<string[]>([]);
-  historyIndex = $state<number>(0);
+  history = new NavigationHistory();
   private _dirEntries = $state<FileSystemEntry[]>([]);
   sortedColumn = $state<ColumnKey>("name");
   sortedDirection = $state<"asc" | "desc">("desc");
@@ -46,29 +56,32 @@ export class FileExplorerState {
   renameValue = $state("");
   pendingScrollToIndex = $state<number | null>(null);
 
-  private dirChangeUnlisten: UnlistenFn | null = null;
-  private refreshTimeout: ReturnType<typeof setTimeout> | null = null;
-
   selection = new SelectionState();
-  clipboard = new ClipboardState();
-  trash = new TrashState();
+  // clipboard and trash are shared across all tabs (injected by TabsState)
+  clipboard: ClipboardState;
+  trash: TrashState;
   readonly entries = $derived.by(() => {
     const base =
       this.currentDir === "trash://" ? this.trash.entries : this._dirEntries;
     return sortEntries(base, this.sortedColumn, this.sortedDirection);
   });
 
-  isSearching = $state(false);
-  searchQuery = $state("");
+  search = new SearchState(
+    () => this.currentDir,
+    (entries) => (this._dirEntries = entries),
+    () => this.updateEntries(this.currentDir),
+  );
 
   readonly tags = tagManager;
   readonly statuses = statusManager;
 
-  private currentSearchId = 0;
-  private searchTimeout: ReturnType<typeof setTimeout> | null = null;
+  constructor(clipboard: ClipboardState, trash: TrashState) {
+    this.clipboard = clipboard;
+    this.trash = trash;
+  }
 
   get currentDir() {
-    return this.history[this.historyIndex] || "";
+    return this.history.current;
   }
 
   get selectedEntry(): FileSystemEntry | null {
@@ -145,9 +158,7 @@ export class FileExplorerState {
 
   setRootDir = async (path: string) => {
     this.rootDir = path;
-    this.history = [path];
-    this.historyIndex = 0;
-    await invoke("watch_directory", { path });
+    this.history.reset(path);
     await this.updateEntries(path);
   };
 
@@ -176,79 +187,32 @@ export class FileExplorerState {
     }
   };
 
-  async startWatching() {
-    this.dirChangeUnlisten = await listen<string>("dir-changed", (event) => {
-      if (event.payload !== this.currentDir) return;
-      if (this.isSearching) return;
-      if (this.refreshTimeout !== null) clearTimeout(this.refreshTimeout);
-      this.refreshTimeout = setTimeout(async () => {
-        await this.updateEntries(this.currentDir);
-        this.refreshTimeout = null;
-      }, 300);
-    });
-  }
-
-  stopWatching() {
-    this.dirChangeUnlisten?.();
-    this.dirChangeUnlisten = null;
-    invoke("unwatch_directory");
-  }
-
-  navigateToDirectory = async (path: string) => {
-    if (this.historyIndex < this.history.length - 1) {
-      this.history = this.history.slice(0, this.historyIndex + 1);
-    }
-
-    this.history.push(path);
-    this.historyIndex = this.history.length - 1;
-
-    this.searchQuery = "";
-    this.cancelSearch();
+  // Loads whatever currentDir now points at: routes trash:// to the trash
+  // state, everything else to a directory read. Callers mutate the history
+  // index first, then call this. The OS file-watcher is repointed separately
+  // by the app-level controller in +page.svelte, which tracks the active tab.
+  private loadCurrentDir = async () => {
+    this.search.reset();
     this.selection.clearSelection();
 
-    if (path === "trash://") {
-      await invoke("unwatch_directory");
+    if (this.currentDir === "trash://") {
       await this.trash.load();
     } else {
-      await invoke("watch_directory", { path });
-      await this.updateEntries(path);
+      await this.updateEntries(this.currentDir);
     }
+  };
+
+  navigateToDirectory = async (path: string) => {
+    this.history.push(path);
+    await this.loadCurrentDir();
   };
 
   goBack = async () => {
-    if (this.historyIndex > 0) {
-      this.historyIndex--;
-
-      this.searchQuery = "";
-      this.cancelSearch();
-      this.selection.clearSelection();
-
-      if (this.currentDir === "trash://") {
-        await invoke("unwatch_directory");
-        await this.trash.load();
-      } else {
-        await invoke("watch_directory", { path: this.currentDir });
-        await this.updateEntries(this.currentDir);
-      }
-    }
+    if (this.history.back()) await this.loadCurrentDir();
   };
 
   goForward = async () => {
-    if (this.historyIndex < this.history.length - 1) {
-      this.historyIndex++;
-
-      this.searchQuery = "";
-      this.cancelSearch();
-      this.selection.clearSelection();
-
-      if (this.currentDir === "trash://") {
-        await invoke("unwatch_directory");
-        await this.trash.load();
-      } else {
-        await invoke("watch_directory", { path: this.currentDir });
-        await this.updateEntries(this.currentDir);
-      }
-    }
+    if (this.history.forward()) await this.loadCurrentDir();
   };
 
   handleEntryClick(entry: FileSystemEntry, index: number, event: MouseEvent) {
@@ -297,74 +261,6 @@ export class FileExplorerState {
       this.sortedDirection = "asc";
     }
   };
-
-  search = (query: string) => {
-    this.searchQuery = query;
-
-    if (this.searchTimeout !== null) {
-      clearTimeout(this.searchTimeout);
-    }
-
-    if (query === "") {
-      this.currentSearchId++;
-      this.isSearching = false;
-      this.updateEntries(this.currentDir);
-      return;
-    }
-
-    this.searchTimeout = setTimeout(() => {
-      this.executeSearch(query);
-      this.searchTimeout = null;
-    }, 500);
-  };
-
-  private async executeSearch(name: string) {
-    const searchId = ++this.currentSearchId;
-
-    this.isSearching = true;
-    const onEvent = new Channel<SearchEvent>();
-    const newEntries: FileSystemEntry[] = [];
-
-    onEvent.onmessage = (searchEvent) => {
-      if (searchId !== this.currentSearchId) return;
-
-      switch (searchEvent.event) {
-        case "searching":
-          newEntries.push(...searchEvent.data.entries);
-          this._dirEntries = [...newEntries];
-          break;
-        case "done":
-          this.isSearching = false;
-          break;
-        case "notFound":
-          this._dirEntries = [];
-          this.isSearching = false;
-          break;
-      }
-    };
-
-    if (name !== "") {
-      await invoke("search_files", {
-        path: this.currentDir,
-        name,
-        onEvent,
-      });
-    } else {
-      if (searchId === this.currentSearchId) {
-        this.isSearching = false;
-        this._dirEntries = [];
-      }
-    }
-  }
-
-  cancelSearch() {
-    this.currentSearchId++;
-    if (this.searchTimeout !== null) {
-      clearTimeout(this.searchTimeout);
-      this.searchTimeout = null;
-    }
-    this.isSearching = false;
-  }
 
   async moveSelectedToTrash() {
     const paths = this.selectedEntries.map((e) => e.path);
@@ -434,46 +330,46 @@ export class FileExplorerState {
     await this.updateEntries(destPath);
   }
 
+  // Optimistically applies a tag/status id change to the local entry so the UI
+  // updates without a directory re-read. The backend call is the source of truth.
+  private mutateEntryIds(
+    entryPath: string,
+    field: "tagIds" | "statusIds",
+    fn: (ids: number[]) => number[],
+  ) {
+    const entry = this.entries.find((e) => e.path === entryPath);
+    if (entry) entry[field] = fn(entry[field]);
+  }
+
   async assignTagToSelected(entryPath: string | undefined, tagId: number) {
     if (!entryPath) return;
     await this.tags.assignTag(entryPath, tagId);
-
-    const entry = this.entries.find((e) => e.path === entryPath);
-    if (entry && !entry.tagIds.includes(tagId)) {
-      entry.tagIds = [...entry.tagIds, tagId];
-    }
+    this.mutateEntryIds(entryPath, "tagIds", (ids) =>
+      ids.includes(tagId) ? ids : [...ids, tagId],
+    );
   }
 
   async unassignTagFromEntry(entryPath: string | undefined, tagId: number) {
     if (!entryPath) return;
     await this.tags.unassignTag(entryPath, tagId);
-
-    const entry = this.entries.find((e) => e.path === entryPath);
-    if (entry) {
-      entry.tagIds = entry.tagIds.filter((id) => id !== tagId);
-    }
+    this.mutateEntryIds(entryPath, "tagIds", (ids) =>
+      ids.filter((id) => id !== tagId),
+    );
   }
 
-  async assignStatusToSelected(
-    entryPath: string | undefined,
-    statusId: number,
-  ) {
+  async assignStatusToSelected(entryPath: string | undefined, statusId: number) {
     if (!entryPath) return;
     await this.statuses.setStatus(entryPath, statusId);
-
-    const entry = this.entries.find((e) => e.path === entryPath);
-    if (entry && !entry.statusIds.includes(statusId)) {
-      entry.statusIds = [...entry.statusIds, statusId];
-    }
+    this.mutateEntryIds(entryPath, "statusIds", (ids) =>
+      ids.includes(statusId) ? ids : [...ids, statusId],
+    );
   }
 
   async unassignStatusFromEntry(entryPath: string | undefined, statusId: number) {
     if (!entryPath) return;
     await this.statuses.unassignStatus(entryPath, statusId);
-
-    const entry = this.entries.find((e) => e.path === entryPath);
-    if (entry) {
-      entry.statusIds = entry.statusIds.filter((id) => id !== statusId);
-    }
+    this.mutateEntryIds(entryPath, "statusIds", (ids) =>
+      ids.filter((id) => id !== statusId),
+    );
   }
 }

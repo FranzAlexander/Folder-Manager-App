@@ -38,6 +38,9 @@
     { key: "status" as ColumnKey, label: "Status", width: 150 },
   ]);
 
+  const tagMap = $derived(new Map(tags.map((t) => [t.id, t])));
+  const statusMap = $derived(new Map(statusList.map((s) => [s.id, s])));
+
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
     node.select();
@@ -48,8 +51,7 @@
   $effect(() => {
     const idx = fileExplorer.pendingScrollToIndex;
     if (idx === null || !viewportEl) return;
-    const itemHeight = 34;
-    const containerHeight = 624;
+    const { itemHeight, containerHeight } = virtualScroll;
     const targetScrollTop = Math.max(0, idx * itemHeight - containerHeight / 2 + itemHeight / 2);
     virtualScroll.scrollTop = targetScrollTop;
     viewportEl.scrollTop = targetScrollTop;
@@ -364,7 +366,7 @@
                   <span
                     class="bg-accent/15 text-accent inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium"
                   >
-                    {tags.find((t) => t.id === tagId)?.name}
+                    {tagMap.get(tagId)?.name}
                   </span>
                 {/each}
               </div>
@@ -378,7 +380,7 @@
                   <span
                     class="bg-muted/80 text-muted-foreground inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium"
                   >
-                    {statusList.find((s) => s.id === statusId)?.name}
+                    {statusMap.get(statusId)?.name}
                   </span>
                 {/each}
               </div>

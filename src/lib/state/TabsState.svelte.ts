@@ -1,11 +1,22 @@
+import { ClipboardState } from "./ClipboardState.svelte";
 import { FileExplorerState } from "./FileExplorerState.svelte";
+import { TrashState } from "./TrashState.svelte";
 
 export class TabsState {
   private _tabs = $state<FileExplorerState[]>([]);
   activeIndex = $state(0);
 
-  constructor(initialTab: FileExplorerState) {
-    this._tabs = [initialTab];
+  // Shared across every tab: one clipboard (cross-tab copy/paste) and one
+  // trash view for the whole window.
+  readonly clipboard = new ClipboardState();
+  readonly trash = new TrashState();
+
+  constructor() {
+    this._tabs = [this.createTab()];
+  }
+
+  private createTab(): FileExplorerState {
+    return new FileExplorerState(this.clipboard, this.trash);
   }
 
   get tabs(): FileExplorerState[] {
@@ -26,7 +37,7 @@ export class TabsState {
   }
 
   async openInNewTab(path: string, focus = true) {
-    const tab = new FileExplorerState();
+    const tab = this.createTab();
     await tab.setRootDir(path);
     this._tabs = [...this._tabs, tab];
     if (focus) this.activeIndex = this._tabs.length - 1;
@@ -34,9 +45,6 @@ export class TabsState {
 
   closeTab(index: number) {
     if (this._tabs.length <= 1) return;
-
-    const tab = this._tabs[index];
-    tab.stopWatching();
 
     const newTabs = this._tabs.filter((_, i) => i !== index);
     this._tabs = newTabs;

@@ -9,7 +9,7 @@
     type="text"
     class="text-primary/80 bg-foreground flex-1 rounded-md p-1 text-sm outline-none"
     placeholder="Search here"
-    bind:value={fileExplorer.searchQuery}
-    oninput={() => fileExplorer.search(fileExplorer.searchQuery)}
+    bind:value={fileExplorer.search.query}
+    oninput={() => fileExplorer.search.run(fileExplorer.search.query)}
   />
 </div>

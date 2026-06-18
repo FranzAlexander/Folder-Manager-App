@@ -29,6 +29,12 @@ export function createVirtualScroll<T>(options: {
   const offsetY = $derived(visibleStart * itemHeight);
 
   return {
+    get itemHeight() {
+      return itemHeight;
+    },
+    get containerHeight() {
+      return containerHeight;
+    },
     get scrollTop() {
       return scrollTop;
     },
