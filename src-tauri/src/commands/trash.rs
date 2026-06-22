@@ -173,6 +173,7 @@ pub fn get_trash_entries(state: tauri::State<Mutex<AppState>>) -> AppResult<Vec<
                     name,
                     is_dir,
                     is_file: !is_dir,
+                    is_symlink: false,
                     size: Some(original_size),
                     path: unique_path,
                     original_path: Some(original_path),
@@ -356,7 +357,9 @@ pub fn move_to_trash(paths: Vec<String>, state: tauri::State<Mutex<AppState>>) -
         let i_path = recycle_bin.join(format!("$I{}", suffix));
         let r_path = recycle_bin.join(format!("$R{}", suffix));
 
-        let metadata = fs::metadata(&src)?;
+        // symlink_metadata fallback so a broken/dangling link can still be deleted
+        // (fs::metadata follows the link and errors when the target is missing).
+        let metadata = fs::metadata(&src).or_else(|_| fs::symlink_metadata(&src))?;
         let file_size = if metadata.is_file() { metadata.len() } else { 0 };
 
         write_recycle_bin_info(&i_path, path_str, file_size)?;

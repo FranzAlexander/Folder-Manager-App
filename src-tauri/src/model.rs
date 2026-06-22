@@ -43,6 +43,7 @@ pub struct FileSystemEntry {
     pub name: String,
     pub is_dir: bool,
     pub is_file: bool,
+    pub is_symlink: bool,
     pub size: Option<u64>,
     pub path: String,
     pub original_path: Option<String>,

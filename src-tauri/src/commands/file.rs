@@ -1,4 +1,9 @@
-use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use chrono::{DateTime, Local};
 use rusqlite::Connection;
@@ -206,7 +211,12 @@ pub fn read_and_process_entries(
                 }
             }
 
-            let metadata = entry.metadata().ok()?;
+            // Follow the link for type/size/date (fs::metadata follows; DirEntry::metadata
+            // does not), so a link to a folder reads as a folder. For broken links fall
+            // back to the link's own metadata so it still shows up in the listing.
+            let metadata = fs::metadata(entry.path())
+                .or_else(|_| fs::symlink_metadata(entry.path()))
+                .ok()?;
             build_file_entry(entry, metadata)
         })
         .collect();
@@ -214,13 +224,39 @@ pub fn read_and_process_entries(
     Ok(entries)
 }
 
+/// The path we store/display for a filesystem item.
+///
+/// A symlink/junction is treated as its own item, so we keep the link's own
+/// location rather than resolving it to its target (canonicalizing only the
+/// parent). Non-links are canonicalized to normalize the path, falling back to
+/// the raw path so unresolvable entries still appear.
+fn stored_path(raw: &Path) -> Option<String> {
+    let is_symlink = fs::symlink_metadata(raw)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+
+    if is_symlink {
+        let name = raw.file_name()?;
+        let resolved = raw
+            .parent()
+            .and_then(|parent| dunce::canonicalize(parent).ok())
+            .map(|parent| parent.join(name))
+            .unwrap_or_else(|| raw.to_path_buf());
+        return resolved.to_str().map(str::to_string);
+    }
+
+    match dunce::canonicalize(raw) {
+        Ok(canonical) => canonical.to_str().map(str::to_string),
+        Err(_) => raw.to_str().map(str::to_string),
+    }
+}
+
 fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileSystemEntry> {
     let name = entry.file_name().into_string().ok()?;
 
-    let path = dunce::canonicalize(entry.path())
-        .ok()?
-        .to_str()?
-        .to_string();
+    let is_symlink = entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false);
+
+    let path = stored_path(&entry.path())?;
 
     let date_modified: DateTime<Local> = metadata.modified().ok()?.into();
 
@@ -239,6 +275,7 @@ fn build_file_entry(entry: fs::DirEntry, metadata: fs::Metadata) -> Option<FileS
         name,
         is_dir: metadata.is_dir(),
         is_file: metadata.is_file(),
+        is_symlink,
         size: metadata.is_file().then(|| metadata.len()),
         path,
         original_path: None,
@@ -369,10 +406,10 @@ pub fn rename_entry(
 
     fs::rename(&old, &new)?;
 
-    let new_path = dunce::canonicalize(&new)
-        .map_err(|e| AppError::FileSystemError(e.to_string()))?
-        .to_string_lossy()
-        .to_string();
+    // Keep the link's own path for symlinks (canonicalizing would resolve to the
+    // target and desync the DB row from the listing).
+    let new_path = stored_path(&new)
+        .ok_or_else(|| AppError::FileSystemError("Failed to resolve renamed path".to_string()))?;
 
     let app_state = state.lock()?;
     rename_file_path(&app_state.conn, &old_path, &new_path)?;
@@ -392,11 +429,20 @@ where
         };
 
         for entry in entries.filter_map(|e| e.ok()) {
-            let Some(metadata) = entry.metadata().ok() else {
+            let is_symlink = entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false);
+
+            // Follow the link for type (fs::metadata follows; DirEntry::metadata does not),
+            // falling back to the link's own metadata for broken links.
+            let Some(metadata) = fs::metadata(entry.path())
+                .or_else(|_| fs::symlink_metadata(entry.path()))
+                .ok()
+            else {
                 continue;
             };
 
-            if metadata.is_dir() {
+            // Never recurse into symlinked/junction directories — a link pointing at
+            // an ancestor would otherwise cause an infinite traversal loop.
+            if metadata.is_dir() && !is_symlink {
                 dirs_to_read.push(entry.path());
             }
 

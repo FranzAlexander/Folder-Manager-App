@@ -2,6 +2,7 @@ export interface FileSystemEntry {
   name: string;
   isDir: boolean;
   isFile: boolean;
+  isSymlink: boolean;
   size: number | null;
   path: string;
   originalPath: string | null;
