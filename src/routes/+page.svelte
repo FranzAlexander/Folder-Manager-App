@@ -30,14 +30,22 @@
     ]);
   });
 
-  // The backend has a single OS watcher; keep it pointed at the active tab's
-  // directory. Re-runs whenever the active tab or its current dir changes.
+  // The active tab's currentDir is the single source of truth for what's
+  // shown. This effect reacts to it — and to tab switches, since fileExplorer
+  // is the active tab — by repointing the single OS watcher and (re)loading
+  // the directory. Reloading on every change is what keeps a tab that went
+  // stale while inactive fresh again the moment you switch back to it.
   $effect(() => {
-    const dir = fileExplorer.currentDir;
-    if (dir && dir !== "trash://") {
-      invoke("watch_directory", { path: dir });
-    } else {
+    const tab = fileExplorer;
+    const dir = tab.currentDir;
+    if (!dir) {
       invoke("unwatch_directory");
+    } else if (dir === "trash://") {
+      invoke("unwatch_directory");
+      tab.trash.load();
+    } else {
+      invoke("watch_directory", { path: dir });
+      tab.updateEntries(dir);
     }
   });
 

@@ -156,10 +156,9 @@ export class FileExplorerState {
     this._dirEntries = await invoke("read_directory", { path });
   };
 
-  setRootDir = async (path: string) => {
+  setRootDir = (path: string) => {
     this.rootDir = path;
     this.history.reset(path);
-    await this.updateEntries(path);
   };
 
   selectDirectory = async () => {
@@ -187,32 +186,26 @@ export class FileExplorerState {
     }
   };
 
-  // Loads whatever currentDir now points at: routes trash:// to the trash
-  // state, everything else to a directory read. Callers mutate the history
-  // index first, then call this. The OS file-watcher is repointed separately
-  // by the app-level controller in +page.svelte, which tracks the active tab.
-  private loadCurrentDir = async () => {
+  // Clears search/selection that don't carry across directories. The actual
+  // load (and watcher repointing) is driven by an effect in +page.svelte that
+  // reacts to currentDir on the active tab — so callers here only move the
+  // history cursor and let that effect fetch the entries.
+  private resetForNavigation = () => {
     this.search.reset();
     this.selection.clearSelection();
-
-    if (this.currentDir === "trash://") {
-      await this.trash.load();
-    } else {
-      await this.updateEntries(this.currentDir);
-    }
   };
 
-  navigateToDirectory = async (path: string) => {
+  navigateToDirectory = (path: string) => {
     this.history.push(path);
-    await this.loadCurrentDir();
+    this.resetForNavigation();
   };
 
-  goBack = async () => {
-    if (this.history.back()) await this.loadCurrentDir();
+  goBack = () => {
+    if (this.history.back()) this.resetForNavigation();
   };
 
-  goForward = async () => {
-    if (this.history.forward()) await this.loadCurrentDir();
+  goForward = () => {
+    if (this.history.forward()) this.resetForNavigation();
   };
 
   handleEntryClick(entry: FileSystemEntry, index: number, event: MouseEvent) {
