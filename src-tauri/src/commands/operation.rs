@@ -201,7 +201,9 @@ fn apply_database_updates(
     Ok(())
 }
 
-fn generate_unique_name(dest: &Path) -> AppResult<PathBuf> {
+/// Returns `dest` if free, else `dest` with a ` (n)` suffix before the
+/// extension — e.g. `report.txt` -> `report (1).txt`.
+pub(crate) fn generate_unique_name(dest: &Path) -> AppResult<PathBuf> {
     if !dest.exists() {
         return Ok(dest.to_path_buf());
     }

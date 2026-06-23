@@ -1,11 +1,21 @@
 <script lang="ts">
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
-  import { FolderPlus, RotateCcw, Trash2, Eraser } from "@lucide/svelte";
+  import { FolderPlus, RotateCcw, Trash2, Eraser, FileArchive } from "@lucide/svelte";
 
   let { fileExplorer }: { fileExplorer: FileExplorerState } = $props();
 
   const isTrash = $derived(fileExplorer.currentDir === "trash://");
   const hasSelection = $derived(fileExplorer.selectedEntries.length > 0);
+
+  // Only surface Extract for an unambiguous single-zip selection.
+  const selectedZip = $derived.by(() => {
+    const selected = fileExplorer.selectedEntries;
+    if (selected.length !== 1) return null;
+    const entry = selected[0];
+    return entry.isFile && entry.name.toLowerCase().endsWith(".zip")
+      ? entry
+      : null;
+  });
 </script>
 
 {#if !isTrash}
@@ -18,6 +28,18 @@
       New Folder
       <span class="text-muted-foreground ml-1 text-xs">Ctrl+Shift+N</span>
     </button>
+
+    {#if selectedZip}
+      <div class="bg-border/60 mx-1 h-4 w-px"></div>
+
+      <button
+        class="hover:bg-muted flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm"
+        onclick={() => fileExplorer.startExtract(selectedZip.path)}
+      >
+        <FileArchive class="size-3.5" />
+        Extract
+      </button>
+    {/if}
   </div>
 {:else if isTrash}
   <div class="border-border flex items-center gap-1 border-b px-3 py-1">

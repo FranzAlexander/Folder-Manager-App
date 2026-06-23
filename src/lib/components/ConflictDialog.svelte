@@ -2,18 +2,19 @@
   import { createVirtualScroll } from "$lib/runes/virtualScroll.svelte";
   import type { ConflictingEntry, ConflictResolution } from "$lib/types";
   import { X, TriangleAlert } from "@lucide/svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { Button, Dialog, RadioGroup, ScrollArea } from "bits-ui";
 
   let {
     isOpen = $bindable(),
     onCancel,
-    onResolve,
+    onApply,
     conflictEntries,
   }: {
     isOpen: boolean;
     onCancel?: () => Promise<void>;
-    onResolve?: () => Promise<void>;
+    // Receives the chosen resolutions keyed by each entry's `src`. The caller
+    // decides what to do (copy/move vs zip extract).
+    onApply: (resolutions: Record<string, ConflictResolution>) => Promise<void>;
     conflictEntries: ConflictingEntry[];
   } = $props();
 
@@ -52,13 +53,9 @@
   }
 
   async function handleResolve() {
-    await invoke("execute_operation", {
-      conflictResolutions: Object.fromEntries(conflictResolutions),
-    });
-
     actionTaken = true;
     isOpen = false;
-    await onResolve?.();
+    await onApply(Object.fromEntries(conflictResolutions));
   }
 </script>
 

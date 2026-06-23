@@ -12,6 +12,8 @@
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import ConflictDialog from "./ConflictDialog.svelte";
+  import ExtractDialog from "./ExtractDialog.svelte";
+  import ZipUpdateDialog from "./ZipUpdateDialog.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import { createVirtualScroll } from "$lib/runes/virtualScroll.svelte";
   import { createKeyboardShortcuts } from "$lib/runes/keyboardShortcuts.svelte";
@@ -196,9 +198,44 @@
 <ConflictDialog
   bind:isOpen={moveAlertOpen}
   onCancel={cancelOperation}
-  onResolve={async () => fileExplorer.updateEntries(fileExplorer.currentDir)}
+  onApply={async (resolutions) => {
+    await invoke("execute_operation", { conflictResolutions: resolutions });
+    await fileExplorer.updateEntries(fileExplorer.currentDir);
+  }}
   {conflictEntries}
 />
+
+{#if fileExplorer.extractZipPath}
+  <ExtractDialog
+    archivePath={fileExplorer.extractZipPath}
+    isExtracting={fileExplorer.isExtracting}
+    progress={fileExplorer.extractProgress}
+    onCancel={fileExplorer.cancelExtract}
+    onCancelExtract={fileExplorer.requestCancelExtract}
+    onConfirm={fileExplorer.confirmExtract}
+  />
+{/if}
+
+{#if fileExplorer.zipUpdate && fileExplorer.zipUpdate.phase !== "conflicts"}
+  <ZipUpdateDialog
+    zipName={fileExplorer.zipUpdate.zipName}
+    folderName={fileExplorer.zipUpdate.folderName}
+    isExtracting={fileExplorer.zipUpdate.phase === "extracting"}
+    progress={fileExplorer.extractProgress}
+    onUpdate={fileExplorer.beginZipUpdate}
+    onIgnore={fileExplorer.ignoreZipUpdate}
+    onCancelExtract={fileExplorer.requestCancelExtract}
+  />
+{/if}
+
+{#if fileExplorer.zipUpdate?.phase === "conflicts"}
+  <ConflictDialog
+    isOpen={true}
+    conflictEntries={fileExplorer.zipUpdate.conflicts}
+    onCancel={async () => fileExplorer.cancelZipUpdate()}
+    onApply={fileExplorer.applyZipUpdateResolutions}
+  />
+{/if}
 
 {#if contextMenuOpen && contextMenuEntry}
   <ContextMenu

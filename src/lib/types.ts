@@ -51,3 +51,8 @@ export type SearchEvent =
     };
 
 export type ConflictResolution = "skip" | "keep" | "replace";
+
+export interface ExtractProgress {
+  current: number;
+  total: number;
+}

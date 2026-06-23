@@ -30,6 +30,7 @@ rand = "0.8"
 thiserror = "2.0.17"
 tauri-plugin-shell = "2"
 notify = { version = "8.2.0", features = ["serde"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dependencies.windows-sys]
 version = ">=0.59, <=0.61.2"

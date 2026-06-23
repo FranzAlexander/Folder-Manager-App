@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { FileExplorerState } from "$lib/state/FileExplorerState.svelte";
   import type { FileSystemEntry } from "$lib/types";
-  import { Copy, Scissors, Clipboard, FolderOpen, FolderPlus, Pencil, RotateCcw, Trash2, Tag, CircleDot, Check, ChevronRight } from "@lucide/svelte";
+  import { Copy, Scissors, Clipboard, FolderOpen, FolderPlus, Pencil, RotateCcw, Trash2, Tag, CircleDot, Check, ChevronRight, FileArchive } from "@lucide/svelte";
 
   let {
     x,
@@ -21,6 +21,9 @@
 
   const isTrash = $derived(fileExplorer.currentDir === "trash://");
   const isOpenable = $derived(!isTrash && (entry.isDir || entry.isFile));
+  const isZip = $derived(
+    !isTrash && entry.isFile && entry.name.toLowerCase().endsWith(".zip"),
+  );
   const hasClipboard = $derived(!fileExplorer.clipboard.isEmpty);
   const selectedEntries = $derived(fileExplorer.selectedEntries);
   const allTags = $derived(fileExplorer.tags.allTags);
@@ -77,6 +80,11 @@
   function handleRename() {
     fileExplorer.startRename(entry);
     onClose();
+  }
+
+  function handleExtract() {
+    onClose();
+    fileExplorer.startExtract(entry.path);
   }
 
   async function handleMoveToTrash() {
@@ -146,6 +154,18 @@
       >
         <FolderOpen class="text-muted-foreground size-4 shrink-0" />
         Open
+      </button>
+      <div class="bg-border/60 my-1 h-px" role="separator"></div>
+    {/if}
+
+    {#if isZip}
+      <button
+        class="hover:bg-muted flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm"
+        onclick={handleExtract}
+        role="menuitem"
+      >
+        <FileArchive class="text-muted-foreground size-4 shrink-0" />
+        Extract Here
       </button>
       <div class="bg-border/60 my-1 h-px" role="separator"></div>
     {/if}

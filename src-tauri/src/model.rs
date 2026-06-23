@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use notify::RecommendedWatcher;
 use rusqlite::Connection;
@@ -10,6 +13,9 @@ pub struct AppState {
     pub operation_type: Option<OperationType>,
     pub current_user_id: String,
     pub watcher: Option<RecommendedWatcher>,
+    // Set by `cancel_extract` and polled by the running extraction loop, which
+    // lives on a blocking thread and can't hold the AppState mutex.
+    pub extract_cancel: Arc<AtomicBool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -89,7 +95,14 @@ pub enum SearchEvent {
     NotFound,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractProgress {
+    pub current: u64,
+    pub total: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ConflictResolution {
     Skip,

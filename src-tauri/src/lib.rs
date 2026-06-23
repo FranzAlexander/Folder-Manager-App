@@ -14,8 +14,9 @@ use tauri::Manager;
 use crate::{
     commands::{
         file::{
-            create_folder, get_root_directory, open_file, read_directory, rename_entry,
-            search_files, set_root_directory, start_executable,
+            cancel_extract, create_folder, execute_zip_extract, get_root_directory,
+            open_file, prepare_zip_extract, read_directory, rename_entry, search_files,
+            set_root_directory, start_executable,
         },
         operation::{cancel_operation, execute_operation, prepare_operation},
         status::{assign_status, create_status, get_statuses, unassign_status},
@@ -47,6 +48,7 @@ pub fn run() {
                 operation_type: None,
                 current_user_id,
                 watcher: None,
+                extract_cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             };
             app.manage(Mutex::new(app_data));
 
@@ -80,6 +82,9 @@ pub fn run() {
             unwatch_directory,
             rename_entry,
             create_folder,
+            cancel_extract,
+            prepare_zip_extract,
+            execute_zip_extract,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

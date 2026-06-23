@@ -1,8 +1,12 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
+    io::{Read, Write},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use chrono::{DateTime, Local};
@@ -10,12 +14,16 @@ use rusqlite::Connection;
 use tauri::Manager;
 
 use crate::{
+    commands::operation::generate_unique_name,
     db::file_repository::{
         insert_files, rename_file_path, select_file_last_opened, select_file_status,
         select_file_tags, select_files, update_file_last_opened, upsert_file_last_opened,
     },
     error::AppResult,
-    model::{AppConfig, AppState, FileSystemEntry, SearchEvent},
+    model::{
+        AppConfig, AppState, ConflictResolution, ConflictingEntry, ExtractProgress,
+        FileSystemEntry, SearchEvent,
+    },
 };
 
 #[cfg(windows)]
@@ -375,6 +383,208 @@ pub fn create_folder(parent: String, name: String) -> AppResult<String> {
         .to_string();
 
     Ok(path)
+}
+
+/// Bytes per read/write chunk. Small enough to keep cancellation responsive
+/// mid-file, large enough to amortise syscall overhead.
+const EXTRACT_CHUNK: usize = 64 * 1024;
+/// Only emit a progress event every ~1 MiB so the channel isn't flooded.
+const PROGRESS_INTERVAL: u64 = 1 << 20;
+
+/// Lists the files inside `path` that would collide with an existing file in
+/// `dest`, so the frontend can offer per-file conflict resolution before an
+/// "update folder from zip" extraction. The `src` of each entry is the in-zip
+/// path, which doubles as the resolution key passed back to `execute_zip_extract`.
+#[tauri::command]
+pub fn prepare_zip_extract(path: String, dest: String) -> AppResult<Vec<ConflictingEntry>> {
+    use crate::error::AppError;
+
+    let file = fs::File::open(&path)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| AppError::InvalidInput(format!("Not a valid zip archive: {}", e)))?;
+
+    let dest_path = PathBuf::from(&dest);
+    let mut conflicts = Vec::new();
+
+    for i in 0..archive.len() {
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| AppError::FileSystemError(format!("Failed to read archive entry: {}", e)))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let Some(rel) = entry.enclosed_name() else {
+            continue;
+        };
+        let out = dest_path.join(&rel);
+        if out.is_file() {
+            let name = rel
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| entry.name().to_string());
+            conflicts.push(ConflictingEntry {
+                name,
+                src: PathBuf::from(entry.name()),
+                dest: out,
+            });
+        }
+    }
+
+    Ok(conflicts)
+}
+
+/// Extracts `path` (a zip archive) into the `dest` folder, applying per-file
+/// conflict `resolutions` (keyed by in-zip path; pass an empty map to overwrite
+/// collisions). The destination is created if it doesn't exist.
+///
+/// Runs on a blocking thread so a large archive never freezes the UI, streams
+/// byte-based progress over `on_event`, and polls the shared cancel flag so the
+/// frontend can abort. Returns `None` when cancelled.
+#[tauri::command]
+pub async fn execute_zip_extract(
+    state: tauri::State<'_, Mutex<AppState>>,
+    path: String,
+    dest: String,
+    resolutions: HashMap<String, ConflictResolution>,
+    on_event: tauri::ipc::Channel<ExtractProgress>,
+) -> AppResult<Option<String>> {
+    use crate::error::AppError;
+
+    let cancel = {
+        let app_state = state.lock()?;
+        app_state.extract_cancel.store(false, Ordering::Relaxed);
+        app_state.extract_cancel.clone()
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        extract_zip_blocking(&path, &dest, &cancel, &resolutions, &on_event)
+    })
+    .await
+    .map_err(|e| AppError::FileSystemError(format!("Extraction task failed: {}", e)))?
+}
+
+/// Signals the in-progress extraction to stop at the next chunk boundary.
+#[tauri::command]
+pub fn cancel_extract(state: tauri::State<Mutex<AppState>>) -> AppResult<()> {
+    let app_state = state.lock()?;
+    app_state.extract_cancel.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+fn extract_zip_blocking(
+    path: &str,
+    dest: &str,
+    cancel: &Arc<AtomicBool>,
+    resolutions: &HashMap<String, ConflictResolution>,
+    on_event: &tauri::ipc::Channel<ExtractProgress>,
+) -> AppResult<Option<String>> {
+    use crate::error::AppError;
+
+    let file = fs::File::open(path)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| AppError::InvalidInput(format!("Not a valid zip archive: {}", e)))?;
+
+    let dest_path = PathBuf::from(dest);
+    // Track whether we created the folder so a cancel can clean up after itself
+    // without ever deleting a pre-existing folder the user extracted into.
+    let dest_existed = dest_path.exists();
+    fs::create_dir_all(&dest_path)?;
+
+    // First pass over the central directory (no decompression) for the total
+    // uncompressed size, so progress can be byte-based. Skipped entries don't
+    // count toward the total so the bar can still reach 100%.
+    let total: u64 = (0..archive.len())
+        .filter_map(|i| {
+            // `by_index_raw` reads the entry header without setting up a
+            // decompressor — the uncompressed size is all we need here.
+            let f = archive.by_index_raw(i).ok()?;
+            if f.is_dir() || matches!(resolutions.get(f.name()), Some(ConflictResolution::Skip)) {
+                None
+            } else {
+                Some(f.size())
+            }
+        })
+        .sum();
+
+    let mut written: u64 = 0;
+    let mut last_sent: u64 = 0;
+    let mut buf = vec![0u8; EXTRACT_CHUNK];
+    let _ = on_event.send(ExtractProgress { current: 0, total });
+
+    for i in 0..archive.len() {
+        if cancel.load(Ordering::Relaxed) {
+            return cancel_cleanup(&dest_path, dest_existed);
+        }
+
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| AppError::FileSystemError(format!("Failed to read archive entry: {}", e)))?;
+
+        let resolution = resolutions.get(entry.name()).copied();
+
+        // zip-slip protection: skip entries whose path would escape `dest`.
+        let Some(rel) = entry.enclosed_name() else {
+            continue;
+        };
+        let out = dest_path.join(rel);
+
+        if entry.is_dir() {
+            fs::create_dir_all(&out)?;
+            continue;
+        }
+
+        // Resolve a name collision: skip drops the entry, keep writes alongside
+        // under a numbered name, replace/none overwrites in place.
+        let target = match resolution {
+            Some(ConflictResolution::Skip) => continue,
+            Some(ConflictResolution::Keep) => generate_unique_name(&out)?,
+            Some(ConflictResolution::Replace) | None => out,
+        };
+
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let mut out_file = fs::File::create(&target)?;
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                // Drop & remove the partial file before cleaning up.
+                drop(out_file);
+                let _ = fs::remove_file(&target);
+                return cancel_cleanup(&dest_path, dest_existed);
+            }
+
+            let n = entry.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            out_file.write_all(&buf[..n])?;
+            written += n as u64;
+
+            if written - last_sent >= PROGRESS_INTERVAL {
+                last_sent = written;
+                let _ = on_event.send(ExtractProgress { current: written, total });
+            }
+        }
+    }
+
+    let _ = on_event.send(ExtractProgress { current: written, total });
+
+    let resolved = dunce::canonicalize(&dest_path)
+        .map_err(|e| AppError::FileSystemError(e.to_string()))?
+        .to_string_lossy()
+        .to_string();
+
+    Ok(Some(resolved))
+}
+
+/// Removes a freshly-created destination after a cancel; leaves pre-existing
+/// folders alone. Returns `Ok(None)` to signal "cancelled" to the caller.
+fn cancel_cleanup(dest: &Path, existed: bool) -> AppResult<Option<String>> {
+    if !existed {
+        let _ = fs::remove_dir_all(dest);
+    }
+    Ok(None)
 }
 
 #[tauri::command]
